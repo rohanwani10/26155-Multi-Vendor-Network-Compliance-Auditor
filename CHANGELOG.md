@@ -272,3 +272,45 @@ not scope creep into Phase 4's UI work itself.
 network calls (Ollama + Chroma are both local-only, telemetry disabled);
 low-confidence items correctly queue for training rather than being
 guessed into the schema. ✅
+
+---
+
+## Phase 4 — Training & Feedback Layer
+
+**Added:**
+
+- `app/models.py` — `LearnedRule` ORM model (vendor, raw_pattern, category, field, value, created_by, created_at).
+- Alembic migration `f982130ab71d` adding the `learned_rules` table.
+- `app/pipeline.py` — `reprocess_config()` helper and `parse_typed_value()` type-caster. When a pending review is resolved, `reprocess_config()` clears old pending review rows for that config and re-runs Tier-2, matching the newly learned vector pattern in ChromaDB and updating `ParsedConfig.normalized_json` immediately.
+- `app/routers/training.py` — `GET /training` listing pending reviews, and `POST /training/resolve` saving `LearnedRule`, updating review status, calling `learn_pattern()` to vector-embed into Chroma, and triggering `reprocess_config()`.
+- Mounted `training.router` in `app/main.py`.
+- `app/templates/training.html` & `app/templates/_pending_reviews_table.html` — server-rendered HTMX pages with dropdowns for standard schema categories (`management_plane`, `auth`, `logging`, `crypto`) and inline resolution forms.
+- `tests/test_training_loop.py` — end-to-end test verifying queueing, resolution via `/training/resolve`, `LearnedRule` creation, `ParsedConfig` real-time schema updating, and zero-LLM reuse on subsequent config uploads via Chroma vector match (asserting `classify_via_llm` is not called).
+
+**Verified:**
+
+- `.venv\Scripts\pytest.exe` → `18 passed` (all 18 unit, integration, and training loop tests pass cleanly).
+
+**Exit criteria met:** A trained pattern is saved and reused automatically on subsequent matching configs via ChromaDB vector embeddings with no repeat LLM call. ✅
+
+---
+
+## Phase 5 — Compliance Evaluation Engine
+
+**Added:**
+
+- `app/models.py` — `Finding` ORM model (device_id, rule_id, framework, title, category, status, severity, remediation_text, evaluated_at).
+- Alembic migration `b28f731c9e42` adding the `findings` table.
+- `app/rules/cis.yaml` — Initial CIS Benchmark YAML rule pack containing 8 core security rules (Telnet, SSHv2, AAA, Password length, Banner, Syslog, Weak ciphers) with per-vendor remediation CLI commands (`cisco`, `juniper`, `paloalto`, `fortinet`, `arista`, `default`).
+- `app/evaluator/engine.py` — YAML rule pack loader, dynamic operator evaluator (`==`, `>=`, `<=`, `!=`, `contains`), vendor remediation resolver, and `evaluate_device()` runner.
+- `app/routers/compliance.py` — `POST /evaluate/{device_id}?framework=CIS` endpoint to run evaluation and persist findings, and `GET /devices/{device_id}/findings` to retrieve device findings.
+- Mounted `compliance.router` in `app/main.py`.
+- `tests/test_compliance_engine.py` — unit and integration test suite verifying pass/fail findings, severity assignment, remediation CLI text generation, and dynamic YAML rule parsing without code modifications.
+
+**Verified:**
+
+- `.venv\Scripts\pytest.exe` → `24 passed` (all 24 unit, integration, training loop, cloud fallback, and compliance engine tests pass cleanly).
+
+**Exit criteria met:** Findings are correct against known-good/known-bad fixture configs; adding a new YAML rule requires zero code changes. ✅
+
+

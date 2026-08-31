@@ -22,6 +22,9 @@ class Device(Base):
     configs: Mapped[list["ParsedConfig"]] = relationship(
         back_populates="device", cascade="all, delete-orphan"
     )
+    findings: Mapped[list["Finding"]] = relationship(
+        back_populates="device", cascade="all, delete-orphan"
+    )
 
 
 class ParsedConfig(Base):
@@ -57,3 +60,45 @@ class PendingReview(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime, default=lambda: datetime.now(timezone.utc)
     )
+
+
+class LearnedRule(Base):
+    """A human-validated mapping for an unrecognized pattern (vendor + raw_pattern),
+    mapping it to a specific category, field, and value."""
+
+    __tablename__ = "learned_rules"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    vendor: Mapped[str] = mapped_column(String, nullable=False)
+    raw_pattern: Mapped[str] = mapped_column(Text, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    field: Mapped[str] = mapped_column(String, nullable=False)
+    value: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_by: Mapped[str] = mapped_column(String, default="admin")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class Finding(Base):
+    """An evaluation finding resulting from checking a device's normalized_json
+    against a security framework rule pack (CIS, NIST, STIG, ISO)."""
+
+    __tablename__ = "findings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_id: Mapped[int] = mapped_column(ForeignKey("devices.id"), nullable=False)
+    rule_id: Mapped[str] = mapped_column(String, nullable=False)
+    framework: Mapped[str] = mapped_column(String, nullable=False, default="CIS")
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    category: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    severity: Mapped[str] = mapped_column(String, nullable=False)
+    remediation_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evaluated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    device: Mapped["Device"] = relationship(back_populates="findings")
+
+

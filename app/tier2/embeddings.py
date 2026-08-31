@@ -5,8 +5,12 @@ every line is a genuine cache miss (-> LLM) the first time it's ever seen."""
 import os
 from functools import lru_cache
 
+os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
+
 import chromadb
 from sentence_transformers import SentenceTransformer
+
 
 CHROMA_PERSIST_DIR = os.environ.get("CHROMA_PERSIST_DIR", "./chroma_data")
 EMBEDDING_MODEL_NAME = os.environ.get("EMBEDDING_MODEL", "all-MiniLM-L6-v2")
@@ -25,8 +29,10 @@ def _client() -> chromadb.ClientAPI:
     # anonymized_telemetry=False: this tool's whole premise is on-prem /
     # air-gap-friendly handling of sensitive device configs (PRD G3), so
     # Chroma must never phone home, even anonymized usage stats.
+    persist_dir = os.environ.get("CHROMA_PERSIST_DIR", CHROMA_PERSIST_DIR)
     settings = chromadb.Settings(anonymized_telemetry=False)
-    return chromadb.PersistentClient(path=CHROMA_PERSIST_DIR, settings=settings)
+    return chromadb.PersistentClient(path=persist_dir, settings=settings)
+
 
 
 def _collection():

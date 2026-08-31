@@ -11,6 +11,18 @@ from app.tier2.fallback import classify_line, is_applicable, is_confident
 from app.vendor_detect import detect_vendor
 
 
+def parse_typed_value(val: any) -> any:
+    if isinstance(val, str):
+        lowered = val.strip().lower()
+        if lowered in ("true", "yes", "enabled", "on"):
+            return True
+        if lowered in ("false", "no", "disabled", "off"):
+            return False
+        if val.strip().isdigit():
+            return int(val.strip())
+    return val
+
+
 def ingest_one(db: Session, filename: str, text: str) -> Device:
     vendor = detect_vendor(filename, text)
     device = Device(filename=filename, vendor=vendor)
@@ -38,7 +50,7 @@ def apply_tier2(db: Session, device: Device, parsed_config: ParsedConfig, vendor
     for line in schema["unrecognized_lines"]:
         result = classify_line(vendor, line)
         if is_confident(result) and is_applicable(result):
-            schema[result["category"]][result["field"]] = result["value"]
+            schema[result["category"]][result["field"]] = parse_typed_value(result["value"])
             applied_confidences.append(result["confidence"])
         else:
             still_unrecognized.append(line)
@@ -61,3 +73,16 @@ def apply_tier2(db: Session, device: Device, parsed_config: ParsedConfig, vendor
     parsed_config.confidence_score = (
         sum(applied_confidences) / len(applied_confidences) if applied_confidences else None
     )
+    db.flush()
+
+
+
+def reprocess_config(db: Session, parsed_config: ParsedConfig) -> None:
+    """Re-normalizes a ParsedConfig after a new rule has been learned.
+    Deletes existing PendingReview rows for this config and re-runs Tier-2,
+    which will now match learned Chroma patterns and update the schema."""
+    db.query(PendingReview).filter(PendingReview.parsed_config_id == parsed_config.id).delete()
+    db.flush()
+    device = parsed_config.device
+    apply_tier2(db, device, parsed_config, device.vendor, parsed_config.raw_text)
+

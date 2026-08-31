@@ -1,0 +1,124 @@
+id: cis_v1_0
+framework: CIS
+version: "1.0.0"
+title: CIS Network Security Benchmark
+rules:
+  - id: CIS-1.1
+    title: Ensure Telnet service is disabled
+    category: management_plane
+    field: telnet_enabled
+    operator: "=="
+    expected: false
+    severity: CRITICAL
+    remediation:
+      cisco: "no service telnet"
+      arista: "no management api telnet"
+      juniper: "delete system services telnet"
+      paloalto: "set deviceconfig system service disable-telnet yes"
+      fortinet: "config system interface\n  edit mgmt\n    unset allowaccess telnet\n  next\nend"
+      default: "Disable Telnet in management plane settings"
+
+  - id: CIS-1.2
+    title: Ensure SSH service is enabled
+    category: management_plane
+    field: ssh_enabled
+    operator: "=="
+    expected: true
+    severity: HIGH
+    remediation:
+      cisco: "transport input ssh"
+      arista: "management api http-commands\n  no shutdown"
+      juniper: "set system services ssh"
+      paloalto: "set deviceconfig system service disable-ssh no"
+      fortinet: "config system interface\n  edit mgmt\n    set allowaccess ssh\n  next\nend"
+      default: "Enable SSH for remote management"
+
+  - id: CIS-1.3
+    title: Ensure SSH Protocol Version 2 is enforced
+    category: management_plane
+    field: ssh_version
+    operator: ">="
+    expected: 2
+    severity: HIGH
+    remediation:
+      cisco: "ip ssh version 2"
+      arista: "ip ssh version 2"
+      juniper: "set system services ssh protocol-version v2"
+      paloalto: "set deviceconfig system ssh-protocol-version v2"
+      fortinet: "config system global\n  set ssh-version 2\nend"
+      default: "Configure SSH to enforce version 2"
+
+  - id: CIS-2.1
+    title: Ensure AAA authentication is enabled
+    category: auth
+    field: aaa_enabled
+    operator: "=="
+    expected: true
+    severity: CRITICAL
+    remediation:
+      cisco: "aaa new-model"
+      arista: "aaa authentication login default local"
+      juniper: "set system authentication-order [ tacplus radius local ]"
+      paloalto: "set mgt-config users admin permissions role-based superuser yes"
+      fortinet: "config system admin\n  edit admin\n    set remote-auth enable\n  next\nend"
+      default: "Enable AAA (Authentication, Authorization, Accounting)"
+
+  - id: CIS-2.2
+    title: Ensure minimum password length is at least 8 characters
+    category: auth
+    field: password_min_length
+    operator: ">="
+    expected: 8
+    severity: MEDIUM
+    remediation:
+      cisco: "security passwords min-length 8"
+      arista: "security passwords min-length 8"
+      juniper: "set system login password minimum-length 8"
+      paloalto: "set deviceconfig system password-profile minimum-length 8"
+      fortinet: "config system global\n  set admin-password-min-length 8\nend"
+      default: "Set minimum password length to 8 characters or more"
+
+  - id: CIS-2.3
+    title: Ensure login banner is configured
+    category: auth
+    field: login_banner_configured
+    operator: "=="
+    expected: true
+    severity: LOW
+    remediation:
+      cisco: "banner motd ^C Authorized Access Only ^C"
+      arista: "banner motd ^C Authorized Access Only ^C"
+      juniper: "set system login message \"Authorized Access Only\""
+      paloalto: "set deviceconfig system login-banner \"Authorized Access Only\""
+      fortinet: "config system global\n  set post-login-banner enable\nend"
+      default: "Configure a security login banner"
+
+  - id: CIS-3.1
+    title: Ensure remote syslog logging is configured
+    category: logging
+    field: syslog_configured
+    operator: "=="
+    expected: true
+    severity: HIGH
+    remediation:
+      cisco: "logging host 10.0.0.50"
+      arista: "logging host 10.0.0.50"
+      juniper: "set system syslog host 10.0.0.50 any notice"
+      paloalto: "set shared log-settings syslog SYSLOG-01 server 10.0.0.50"
+      fortinet: "config log syslogd setting\n  set status enable\n  set server 10.0.0.50\nend"
+      default: "Configure a remote syslog server"
+
+  - id: CIS-4.1
+    title: Ensure weak cryptography ciphers are absent
+    category: crypto
+    field: weak_ciphers_present
+    operator: "=="
+    expected: false
+    severity: HIGH
+    remediation:
+      cisco: "no ip http secure-ciphersuite 3des"
+      arista: "no ip http ssl ciphersuite 3des"
+      juniper: "set system services ssh ciphers [ aes128-ctr aes256-ctr ]"
+      paloalto: "set deviceconfig system ssh-cipher-policy aes-gcm"
+      fortinet: "config system global\n  set strong-crypto enable\nend"
+      default: "Disable weak ciphers (3DES, DES, RC4)"
