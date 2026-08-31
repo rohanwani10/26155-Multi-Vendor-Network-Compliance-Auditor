@@ -1,0 +1,25 @@
+services:
+  api:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      DATABASE_URL: sqlite:///./compliance.db
+      OLLAMA_HOST: http://ollama:11434
+      OLLAMA_MODEL: gemma3:4b
+    depends_on:
+      - ollama
+
+  # One-time setup on a fresh clone: pull the model into this container with
+  # `docker compose exec ollama ollama pull gemma3:4b` (or swap OLLAMA_MODEL
+  # above and pull that instead - the PRD calls this out as a config change,
+  # not a code change).
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
+volumes:
+  ollama_data:

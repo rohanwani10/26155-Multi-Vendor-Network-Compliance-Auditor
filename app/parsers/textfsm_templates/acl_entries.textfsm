@@ -1,0 +1,9 @@
+Value ACTION (permit|deny)
+Value PROTOCOL (\S+)
+Value SOURCE (any|host\s+\S+|\S+\s+\d+\.\d+\.\d+\.\d+)
+Value DEST (any|host\s+\S+|\S+\s+\d+\.\d+\.\d+\.\d+)
+Value PORT (\d+)
+
+Start
+  ^\s*${ACTION}\s+${PROTOCOL}\s+${SOURCE}\s+${DEST}\s+eq\s+${PORT}\s*$$ -> Record
+  ^\s*${ACTION}\s+${PROTOCOL}\s+${SOURCE}\s+${DEST}\s*$$ -> Record

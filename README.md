@@ -96,17 +96,19 @@ Full system diagram (with decision logic, feedback loop, and data flow) is in
 
 ## Tech Stack
 
-| Layer                       | Technology                                     |
-| --------------------------- | ---------------------------------------------- |
-| Frontend / Dashboard        | React, Tailwind CSS                            |
-| Backend API                 | Python (FastAPI)                               |
-| Config Collection           | Netmiko / NAPALM                               |
-| Parsing (Tier 1)            | Custom regex/grammar parsers per vendor family |
-| Parsing (Tier 2 — fallback) | LLM-based few-shot classification              |
-| Compliance Rule Packs       | YAML                                           |
-| Reporting                   | ReportLab / WeasyPrint (PDF generation)        |
-| Database                    | PostgreSQL                                     |
-| Deployment                  | Docker / Docker Compose                        |
+Frontend need is intentionally minimal, so the backend renders the frontend
+directly — no separate SPA, no npm build step.
+
+| Layer                       | Technology                                                                |
+| ---------------------------- | -------------------------------------------------------------------------- |
+| Backend & Frontend           | Python (FastAPI), server-rendered HTML via Jinja2, Tailwind CDN, HTMX      |
+| Config Collection            | File upload (single file or ZIP); no live SSH polling in this version     |
+| Parsing (Tier 1)             | TextFSM + `ntc-templates`, `ciscoconfparse2` for hierarchical configs      |
+| Parsing (Tier 2 — fallback)  | `sentence-transformers` embeddings → Chroma (local vector store) → local Ollama LLM |
+| Compliance Rule Packs        | YAML                                                                       |
+| Reporting                    | WeasyPrint, rendering the same Jinja2 templates as the web view           |
+| Database                     | SQLite by default; swappable to PostgreSQL via one env var (SQLAlchemy)   |
+| Deployment                   | Docker / Docker Compose (api + ollama + optional postgres)                |
 
 ---
 
@@ -115,9 +117,13 @@ Full system diagram (with decision logic, feedback loop, and data flow) is in
 ### Prerequisites
 
 - Python 3.10+
-- Node.js 18+
-- Docker & Docker Compose (recommended)
-- PostgreSQL 14+ (if not using Docker)
+- Docker & Docker Compose (recommended) — brings up an `ollama` service
+  alongside the app; after first boot, pull a model into it once with
+  `docker compose exec ollama ollama pull gemma3:4b` (only needed for the
+  Tier-2 LLM fallback path; swapping models is a config change — see
+  `.env.example` — not a code change)
+- Running without Docker instead: install [Ollama](https://ollama.com)
+  locally and `ollama pull gemma3:4b`
 
 ### Installation
 
@@ -132,7 +138,7 @@ Full system diagram (with decision logic, feedback loop, and data flow) is in
 
    ```bash
    cp .env.example .env
-   # edit .env with your DB credentials, LLM API key/endpoint, etc.
+   # edit .env if you want to point DATABASE_URL at Postgres instead of SQLite
    ```
 
 3. **Run with Docker (recommended)**
@@ -141,32 +147,16 @@ Full system diagram (with decision logic, feedback loop, and data flow) is in
    docker-compose up --build
    ```
 
-   The dashboard will be available at `http://localhost:3000`, API at
-   `http://localhost:8000`.
+   The app (UI + API, server-rendered) is available at `http://localhost:8000`.
 
 4. **Manual setup (without Docker)**
 
-   Backend:
-
    ```bash
-   cd backend
-   python -m venv venv
-   source venv/bin/activate   # Windows: venv\Scripts\activate
+   python -m venv .venv
+   source .venv/bin/activate   # Windows: .venv\Scripts\activate
    pip install -r requirements.txt
-   uvicorn main:app --reload
-   ```
-
-   Frontend:
-
-   ```bash
-   cd frontend
-   npm install
-   npm run dev
-   ```
-
-5. **Load default rule packs**
-   ```bash
-   python scripts/load_rulepacks.py --framework cis,nist,stig,iso
+   alembic upgrade head
+   uvicorn app.main:app --reload
    ```
 
 ---
@@ -189,22 +179,28 @@ Full system diagram (with decision logic, feedback loop, and data flow) is in
 
 ```
 .
-├── backend/
-│   ├── parsers/            # Tier 1 rule-based vendor parsers
-│   ├── llm_fallback/       # Tier 2 LLM classification module
-│   ├── schema/             # Vendor-neutral schema definitions
-│   ├── rulepacks/          # CIS / NIST / STIG / ISO YAML rule packs
-│   ├── training/           # Human-in-the-loop training module & learned rules store
-│   ├── reporting/          # PDF report generation
-│   └── main.py
-├── frontend/
-│   └── src/                # React dashboard
+├── app/
+│   ├── main.py              # FastAPI app, routes
+│   ├── database.py          # SQLAlchemy engine/session setup
+│   ├── models.py            # ORM models (Device, ParsedConfig, RulePack, ...)
+│   ├── parsers/              # Tier 1 rule-based vendor parsers
+│   ├── llm_fallback/         # Tier 2 embedding + LLM classification module
+│   ├── rulepacks/            # CIS / NIST / STIG / ISO YAML rule packs
+│   ├── training/             # Human-in-the-loop training module & learned rules store
+│   ├── reporting/            # HTML + PDF report generation
+│   ├── templates/            # Jinja2 templates (shared by HTML views and PDF export)
+│   └── static/
+├── alembic/                  # DB migrations
+├── tests/
+│   └── fixtures/configs/     # Sample vendor configs used across all test phases
 ├── docs/
-│   ├── architecture.md     # 2-page architecture document
+│   ├── architecture.md       # 2-page architecture document
 │   └── diagram.png
-├── scripts/
 ├── docker-compose.yml
+├── Dockerfile
+├── requirements.txt
 ├── .env.example
+├── CHANGELOG.md
 └── README.md
 ```
 
