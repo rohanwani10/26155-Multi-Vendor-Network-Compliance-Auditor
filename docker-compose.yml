@@ -10,6 +10,17 @@ services:
     depends_on:
       - ollama
 
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE=http://localhost:8000
+    depends_on:
+      - api
+
   # One-time setup on a fresh clone: pull the model into this container with
   # `docker compose exec ollama ollama pull gemma3:4b` (or swap OLLAMA_MODEL
   # above and pull that instead - the PRD calls this out as a config change,

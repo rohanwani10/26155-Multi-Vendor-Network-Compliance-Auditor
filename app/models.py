@@ -102,3 +102,22 @@ class Finding(Base):
     device: Mapped["Device"] = relationship(back_populates="findings")
 
 
+class TelemetryRecord(Base):
+    """Network health & telemetry sample (SNMP/NetFlow metric)."""
+
+    __tablename__ = "telemetry_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    device_name: Mapped[str] = mapped_column(String, nullable=False, default="Core-Gateway-01")
+    interface_name: Mapped[str] = mapped_column(String, nullable=False)
+    wan_tag: Mapped[str] = mapped_column(String, nullable=False, default="WAN1_PRIMARY")
+    utilization_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False, default=10.0)
+    packet_loss_pct: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    jitter_ms: Mapped[float] = mapped_column(Float, nullable=False, default=1.0)
+    timestamp: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+
+

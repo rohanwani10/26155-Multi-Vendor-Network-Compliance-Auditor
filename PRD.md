@@ -374,14 +374,14 @@ instructions.
 
 **Tasks:**
 
-- [ ] Write one integration test that runs the full path: upload a known-vendor
+- [x] Write one integration test that runs the full path: upload a known-vendor
       config → evaluate → assert findings exist → generate PDF.
-- [ ] Write one integration test for the "unknown vendor" path: upload an
+- [x] Write one integration test for the "unknown vendor" path: upload an
       unrecognized format → confirm it queues for training → resolve it →
       confirm it now evaluates correctly.
-- [ ] `docker-compose up` from a clean clone completes with no manual steps
+- [x] `docker-compose up` from a clean clone completes with no manual steps
       beyond `.env` setup.
-- [ ] Record the demo flow once everything is green (this maps to the required
+- [x] Record the demo flow once everything is green (this maps to the required
       2-minute demo video deliverable).
 
 **Verify:**
@@ -404,10 +404,10 @@ the core deliverable.
 
 **Tasks:** (only if time remains after Phase 8)
 
-- [ ] Telemetry collector stub (SNMP/NetFlow ingestion).
-- [ ] Congestion/spike detector using the same local Ollama instance.
-- [ ] Multi-WAN link comparator.
-- [ ] Surface alerts on the same `/dashboard` page, clearly labeled as a
+- [x] Telemetry collector stub (SNMP/NetFlow ingestion).
+- [x] Congestion/spike detector using the same local Ollama instance.
+- [x] Multi-WAN link comparator.
+- [x] Surface alerts on the same `/dashboard` page, clearly labeled as a
       separate module.
 
 **Exit criteria:** Clearly does not modify or risk the Phase 0–8 deliverable;

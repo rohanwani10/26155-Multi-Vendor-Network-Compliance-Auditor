@@ -2,7 +2,19 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { LayoutDashboard, ShieldAlert, CheckCircle2, XCircle, AlertTriangle, Download, Loader2 } from "lucide-react";
+import {
+  LayoutDashboard,
+  ShieldAlert,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Download,
+  Loader2,
+  Activity,
+  Zap,
+  Radio,
+  Cpu,
+} from "lucide-react";
 
 interface DeviceSummary {
   device_id: number;
@@ -23,35 +35,75 @@ interface DashboardStats {
   device_summaries: DeviceSummary[];
 }
 
+interface WanStatus {
+  name: string;
+  interface: string;
+  utilization_pct: number;
+  latency_ms: number;
+  loss_pct: number;
+  status: string;
+}
+
+interface TelemetryHealthData {
+  total_interfaces_monitored: number;
+  congestion_spikes: {
+    interface: string;
+    wan_tag: string;
+    severity: string;
+    utilization_pct: number;
+    latency_ms: number;
+    packet_loss_pct: number;
+    message: string;
+  }[];
+  multi_wan_comparison: {
+    primary_wan: WanStatus;
+    secondary_wan: WanStatus;
+    recommended_path: string;
+  };
+  ai_advisory: string;
+}
+
 const API_BASE = "http://localhost:8000";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [telemetry, setTelemetry] = useState<TelemetryHealthData | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchStats = async () => {
+  const fetchData = async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/dashboard/stats`);
-      if (res.ok) {
-        const data = await res.json();
-        setStats(data);
+      try {
+        const statsRes = await fetch(`${API_BASE}/api/dashboard/stats`);
+        if (statsRes.ok) {
+          setStats(await statsRes.json());
+        }
+      } catch (err) {
+        console.error("Failed to fetch dashboard stats:", err);
       }
-    } catch (err) {
-      console.error("Failed to fetch dashboard stats:", err);
+
+      try {
+        const telemetryRes = await fetch(`${API_BASE}/api/telemetry/health`);
+        if (telemetryRes.ok) {
+          setTelemetry(await telemetryRes.json());
+        }
+      } catch (err) {
+        console.error("Failed to fetch telemetry health:", err);
+      }
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchStats();
+    fetchData();
   }, []);
+
 
   if (loading) {
     return (
       <div className="p-12 text-center text-slate-500 flex flex-col justify-center items-center space-y-3">
         <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-        <span>Loading executive compliance stats from FastAPI...</span>
+        <span>Loading compliance & telemetry health stats from FastAPI...</span>
       </div>
     );
   }
@@ -65,6 +117,12 @@ export default function DashboardPage() {
     device_summaries = [],
   } = stats || {};
 
+  const {
+    congestion_spikes = [],
+    multi_wan_comparison,
+    ai_advisory,
+  } = telemetry || {};
+
   return (
     <div className="space-y-8">
       {/* Title */}
@@ -74,7 +132,7 @@ export default function DashboardPage() {
           <span>Compliance Dashboard</span>
         </h1>
         <p className="mt-1 text-sm text-slate-400">
-          Aggregated security compliance posture across all audited network devices.
+          Aggregated security compliance posture and Network Health Advisory across all audited network devices.
         </p>
       </div>
 
@@ -106,6 +164,161 @@ export default function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* PHASE 9 — Network Health & Multi-WAN Link Advisory Widget */}
+      {telemetry && (
+        <div className="bg-slate-900/90 border border-cyan-900/40 rounded-2xl p-6 shadow-2xl space-y-6 relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-cyan-400">
+                <Activity className="w-5 h-5 animate-pulse" />
+              </div>
+              <div>
+                <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
+                  <span>Network Health & Multi-WAN Link Advisory</span>
+                </h2>
+                <p className="text-xs text-slate-400">
+                  Real-time telemetry metric analysis & local Ollama link optimization recommendations
+                </p>
+              </div>
+            </div>
+            <span className="px-3 py-1 bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-xs font-mono rounded-full font-bold uppercase tracking-wider self-start sm:self-auto">
+              Air-Gapped LLM Module
+            </span>
+          </div>
+
+          {/* Multi-WAN Path Comparison Cards */}
+          {multi_wan_comparison && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div
+                className={`p-5 rounded-xl border transition ${
+                  multi_wan_comparison.primary_wan.status === "Congested"
+                    ? "bg-rose-950/20 border-rose-800/60"
+                    : "bg-slate-950/60 border-slate-800"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Radio className="w-4 h-4 text-cyan-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-white">
+                      {multi_wan_comparison.primary_wan.name} ({multi_wan_comparison.primary_wan.interface})
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
+                      multi_wan_comparison.primary_wan.status === "Congested"
+                        ? "bg-rose-950 text-rose-400 border border-rose-800"
+                        : "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                    }`}
+                  >
+                    {multi_wan_comparison.primary_wan.status}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Util %</div>
+                    <div className="text-lg font-mono font-bold text-rose-400">
+                      {multi_wan_comparison.primary_wan.utilization_pct}%
+                    </div>
+                  </div>
+                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Latency</div>
+                    <div className="text-lg font-mono font-bold text-amber-400">
+                      {multi_wan_comparison.primary_wan.latency_ms}ms
+                    </div>
+                  </div>
+                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Loss %</div>
+                    <div className="text-lg font-mono font-bold text-rose-400">
+                      {multi_wan_comparison.primary_wan.loss_pct}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div
+                className={`p-5 rounded-xl border transition ${
+                  multi_wan_comparison.secondary_wan.status === "Congested"
+                    ? "bg-rose-950/20 border-rose-800/60"
+                    : "bg-slate-950/60 border-slate-800"
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Radio className="w-4 h-4 text-emerald-400" />
+                    <span className="text-xs font-bold uppercase tracking-wider text-white">
+                      {multi_wan_comparison.secondary_wan.name} ({multi_wan_comparison.secondary_wan.interface})
+                    </span>
+                  </div>
+                  <span
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
+                      multi_wan_comparison.secondary_wan.status === "Congested"
+                        ? "bg-rose-950 text-rose-400 border border-rose-800"
+                        : "bg-emerald-950 text-emerald-400 border border-emerald-800"
+                    }`}
+                  >
+                    {multi_wan_comparison.secondary_wan.status}
+                  </span>
+                </div>
+                <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Util %</div>
+                    <div className="text-lg font-mono font-bold text-emerald-400">
+                      {multi_wan_comparison.secondary_wan.utilization_pct}%
+                    </div>
+                  </div>
+                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Latency</div>
+                    <div className="text-lg font-mono font-bold text-slate-200">
+                      {multi_wan_comparison.secondary_wan.latency_ms}ms
+                    </div>
+                  </div>
+                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
+                    <div className="text-[10px] text-slate-400 uppercase font-medium">Loss %</div>
+                    <div className="text-lg font-mono font-bold text-emerald-400">
+                      {multi_wan_comparison.secondary_wan.loss_pct}%
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Active Congestion Spike Alerts */}
+          {congestion_spikes.length > 0 && (
+            <div className="space-y-2">
+              <div className="text-xs uppercase font-semibold text-rose-400 tracking-wider flex items-center space-x-1.5">
+                <AlertTriangle className="w-4 h-4" />
+                <span>Active Link Congestion Alerts</span>
+              </div>
+              {congestion_spikes.map((spike, idx) => (
+                <div
+                  key={idx}
+                  className="p-3 bg-rose-950/40 border border-rose-800/60 text-rose-200 rounded-xl text-xs font-medium flex items-center justify-between"
+                >
+                  <span>{spike.message}</span>
+                  <span className="px-2 py-0.5 bg-rose-900 text-white rounded font-bold uppercase text-[10px]">
+                    {spike.severity}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* AI Advisory Panel */}
+          {ai_advisory && (
+            <div className="p-4 bg-slate-950/80 border border-cyan-800/40 rounded-xl space-y-2">
+              <div className="text-xs uppercase font-bold text-cyan-400 tracking-wider flex items-center space-x-1.5">
+                <Cpu className="w-4 h-4 text-cyan-400" />
+                <span>Ollama AI Advisory Recommendation</span>
+              </div>
+              <p className="text-xs text-slate-300 leading-relaxed font-mono">
+                {ai_advisory}
+              </p>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Severity Breakdown Visualizer */}
       {total_findings > 0 && (
