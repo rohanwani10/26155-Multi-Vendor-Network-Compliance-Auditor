@@ -1,0 +1,109 @@
+id: iso_27001_v2022
+framework: ISO
+version: "27001:2022"
+title: ISO/IEC 27001 Information Security Management System Controls
+rules:
+  - id: ISO-A.13.1.1
+    title: Network Controls - Insecure Telnet management protocol disabled
+    category: management_plane
+    field: telnet_enabled
+    operator: "=="
+    expected: false
+    severity: CRITICAL
+    remediation:
+      cisco: "no service telnet"
+      arista: "no management api telnet"
+      juniper: "delete system services telnet"
+      paloalto: "set deviceconfig system service disable-telnet yes"
+      fortinet: "config system interface\n  edit mgmt\n    unset allowaccess telnet\n  next\nend"
+      default: "Disable Telnet service"
+
+  - id: ISO-A.13.2.1
+    title: Information Transfer - Encrypted SSH protocol version 2 required
+    category: management_plane
+    field: ssh_version
+    operator: ">="
+    expected: 2
+    severity: HIGH
+    remediation:
+      cisco: "ip ssh version 2"
+      arista: "ip ssh version 2"
+      juniper: "set system services ssh protocol-version v2"
+      paloalto: "set deviceconfig system ssh-protocol-version v2"
+      fortinet: "config system global\n  set ssh-version 2\nend"
+      default: "Enforce SSHv2"
+
+  - id: ISO-A.9.2.1
+    title: User Registration and Provisioning - AAA authentication mandatory
+    category: auth
+    field: aaa_enabled
+    operator: "=="
+    expected: true
+    severity: CRITICAL
+    remediation:
+      cisco: "aaa new-model"
+      arista: "aaa authentication login default local"
+      juniper: "set system authentication-order [ tacplus radius local ]"
+      paloalto: "set mgt-config users admin permissions role-based superuser yes"
+      fortinet: "config system admin\n  edit admin\n    set remote-auth enable\n  next\nend"
+      default: "Enable AAA"
+
+  - id: ISO-A.9.4.3
+    title: Password Management System - Minimum password length of 10 characters
+    category: auth
+    field: password_min_length
+    operator: ">="
+    expected: 10
+    severity: MEDIUM
+    remediation:
+      cisco: "security passwords min-length 10"
+      arista: "security passwords min-length 10"
+      juniper: "set system login password minimum-length 10"
+      paloalto: "set deviceconfig system password-profile minimum-length 10"
+      fortinet: "config system global\n  set admin-password-min-length 10\nend"
+      default: "Configure minimum password length of 10"
+
+  - id: ISO-A.13.2.2
+    title: System Access Banners - Display warning notice prior to authorization
+    category: auth
+    field: login_banner_configured
+    operator: "=="
+    expected: true
+    severity: LOW
+    remediation:
+      cisco: "banner motd ^C Authorized Access Only ^C"
+      arista: "banner motd ^C Authorized Access Only ^C"
+      juniper: "set system login message \"Authorized Access Only\""
+      paloalto: "set deviceconfig system login-banner \"Authorized Access Only\""
+      fortinet: "config system global\n  set post-login-banner enable\nend"
+      default: "Configure login banner"
+
+  - id: ISO-A.12.4.1
+    title: Event Logging - Remote audit log server configuration
+    category: logging
+    field: syslog_configured
+    operator: "=="
+    expected: true
+    severity: HIGH
+    remediation:
+      cisco: "logging host 10.0.0.50"
+      arista: "logging host 10.0.0.50"
+      juniper: "set system syslog host 10.0.0.50 any notice"
+      paloalto: "set shared log-settings syslog SYSLOG-01 server 10.0.0.50"
+      fortinet: "config log syslogd setting\n  set status enable\n  set server 10.0.0.50\nend"
+      default: "Configure remote syslog"
+
+  - id: ISO-A.10.1.1
+    title: Cryptographic Controls - Weak cryptography disabled
+    category: crypto
+    field: weak_ciphers_present
+    operator: "=="
+    expected: false
+    severity: HIGH
+    remediation:
+      cisco: "no ip http secure-ciphersuite 3des"
+      arista: "no ip http ssl ciphersuite 3des"
+      juniper: "set system services ssh ciphers [ aes128-ctr aes256-ctr ]"
+      paloalto: "set deviceconfig system ssh-cipher-policy aes-gcm"
+      fortinet: "config system global\n  set strong-crypto enable\nend"
+      default: "Disable weak ciphers"

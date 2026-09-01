@@ -19,7 +19,7 @@ line vty 0 4
     device = ingest_one(db_session, "cisco_gw.cfg", cisco_text)
     db_session.commit()
 
-    # Trigger evaluation endpoint
+    # Trigger evaluation endpoint for CIS
     response = client.post(f"/evaluate/{device.id}?framework=CIS")
     assert response.status_code == 200
     data = response.json()
@@ -81,6 +81,78 @@ logging host 10.0.0.50
 
     syslog = next(f for f in findings if f.rule_id == "CIS-3.1")
     assert syslog.status == "pass"
+
+
+def test_evaluation_nist_framework(client, db_session):
+    cisco_text = """!
+version 15.2
+hostname CISCO-GW02
+line vty 0 4
+ transport input telnet ssh
+!
+"""
+    device = ingest_one(db_session, "cisco_nist.cfg", cisco_text)
+    db_session.commit()
+
+    # Trigger evaluation endpoint for NIST
+    response = client.post(f"/evaluate/{device.id}?framework=NIST")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["framework"] == "NIST"
+    assert data["summary"]["total_rules"] >= 7
+
+    telnet_rule = next((f for f in data["findings"] if f["rule_id"] == "NIST-AC-17.1"), None)
+    assert telnet_rule is not None
+    assert telnet_rule["status"] == "fail"
+    assert "no service telnet" in telnet_rule["remediation_text"]
+
+    # Verify GET endpoint
+    get_res = client.get(f"/devices/{device.id}/findings?framework=NIST")
+    assert get_res.status_code == 200
+    get_data = get_res.json()
+    assert get_data["framework"] == "NIST"
+    assert len(get_data["findings"]) == len(data["findings"])
+
+
+def test_evaluation_stig_framework(client, db_session):
+    # Use flat 'set'-style Junos config (what the Tier-1 Juniper parser supports)
+    juniper_text = """## Last commit
+set system host-name JUNIPER-01
+set system services telnet
+set system services ssh protocol-version v2
+"""
+    device = ingest_one(db_session, "juniper_stig.cfg", juniper_text)
+    db_session.commit()
+
+    response = client.post(f"/evaluate/{device.id}?framework=STIG")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["framework"] == "STIG"
+    telnet_rule = next((f for f in data["findings"] if f["rule_id"] == "STIG-NET-0001"), None)
+    assert telnet_rule is not None
+    assert telnet_rule["status"] == "fail"
+    assert "delete system services telnet" in telnet_rule["remediation_text"]
+
+
+def test_evaluation_iso_framework(client, db_session):
+    palo_text = """
+set deviceconfig system service disable-telnet no
+set deviceconfig system ssh-protocol-version v2
+"""
+    device = ingest_one(db_session, "palo_iso.cfg", palo_text)
+    db_session.commit()
+
+    response = client.post(f"/evaluate/{device.id}?framework=ISO")
+    assert response.status_code == 200
+    data = response.json()
+
+    assert data["framework"] == "ISO"
+    telnet_rule = next((f for f in data["findings"] if f["rule_id"] == "ISO-A.13.1.1"), None)
+    assert telnet_rule is not None
+    assert telnet_rule["status"] == "fail"
+    assert "disable-telnet yes" in telnet_rule["remediation_text"]
 
 
 def test_yaml_rule_added_without_code_changes():

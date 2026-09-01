@@ -57,9 +57,8 @@ def test_upload_page_lists_uploaded_device(client, db_session):
     content = (FIXTURES / "cisco_ios_1.cfg").read_bytes()
     _upload(client, "cisco_ios_1.cfg", content)
 
-    response = client.get("/upload")
+    response = client.get("/devices")
     assert response.status_code == 200
-    soup = BeautifulSoup(response.text, "html.parser")
-    page_text = soup.get_text()
-    assert "cisco_ios_1.cfg" in page_text
-    assert "cisco" in page_text
+    data = response.json()
+    assert any(d["filename"] == "cisco_ios_1.cfg" and d["vendor"] == "cisco" for d in data)
+

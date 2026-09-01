@@ -34,7 +34,8 @@ def test_training_loop_end_to_end(client, db_session):
     # 2. Check /training UI endpoint
     response = client.get("/training")
     assert response.status_code == 200
-    assert unknown_line in response.text
+    pending_items = response.json()
+    assert any(item["raw_line"] == unknown_line for item in pending_items)
 
     # 3. Resolve the item via POST /training/resolve
     resolve_resp = client.post(
@@ -47,7 +48,9 @@ def test_training_loop_end_to_end(client, db_session):
         },
     )
     assert resolve_resp.status_code == 200
-    assert "Successfully resolved" in resolve_resp.text
+    res_data = resolve_resp.json()
+    assert "Successfully resolved" in res_data["message"]
+
 
     # 4. Assert LearnedRule created and PendingReview cleared from queue
     assert db_session.query(PendingReview).filter(PendingReview.id == pending.id).first() is None

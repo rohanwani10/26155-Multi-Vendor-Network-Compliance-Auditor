@@ -12,3 +12,5 @@ ntc-templates==7.7.0
 ciscoconfparse2==0.9.18
 sentence-transformers==3.3.1
 chromadb==0.5.23
+weasyprint==69.0
+fpdf2==2.8.8

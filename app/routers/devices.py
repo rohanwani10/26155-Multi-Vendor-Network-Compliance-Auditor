@@ -1,6 +1,4 @@
-from fastapi import APIRouter, Depends, Request, UploadFile
-from fastapi.responses import HTMLResponse
-from fastapi.templating import Jinja2Templates
+from fastapi import APIRouter, Depends, UploadFile
 from sqlalchemy.orm import Session
 
 from app.database import get_db
@@ -9,21 +7,46 @@ from app.models import Device
 from app.pipeline import ingest_one
 
 router = APIRouter()
-templates = Jinja2Templates(directory="app/templates")
 
 
-@router.get("/upload", response_class=HTMLResponse)
-def upload_page(request: Request, db: Session = Depends(get_db)):
+@router.get("/devices")
+@router.get("/api/devices")
+def get_devices(db: Session = Depends(get_db)):
     devices = db.query(Device).order_by(Device.uploaded_at.desc()).all()
-    return templates.TemplateResponse(request, "upload.html", {"devices": devices})
+    return [
+        {
+            "id": d.id,
+            "filename": d.filename,
+            "vendor": d.vendor,
+            "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+        }
+        for d in devices
+    ]
 
 
-@router.post("/devices/upload", response_class=HTMLResponse)
-async def upload_device(request: Request, file: UploadFile, db: Session = Depends(get_db)):
+@router.post("/devices/upload")
+@router.post("/api/devices/upload")
+async def upload_device(file: UploadFile, db: Session = Depends(get_db)):
     content = await file.read()
+    ingested = []
     for name, text in extract_files(file.filename, content):
-        ingest_one(db, name, text)
+        device = ingest_one(db, name, text)
+        ingested.append(device)
     db.commit()
 
     devices = db.query(Device).order_by(Device.uploaded_at.desc()).all()
-    return templates.TemplateResponse(request, "_device_list.html", {"devices": devices})
+    return {
+        "status": "ok",
+        "ingested_count": len(ingested),
+        "devices": [
+            {
+                "id": d.id,
+                "filename": d.filename,
+                "vendor": d.vendor,
+                "uploaded_at": d.uploaded_at.isoformat() if d.uploaded_at else None,
+            }
+            for d in devices
+        ],
+    }
+
+

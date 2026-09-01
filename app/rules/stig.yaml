@@ -1,0 +1,109 @@
+id: disa_stig_v1
+framework: STIG
+version: "V2R1"
+title: DISA Network Infrastructure STIG Benchmark
+rules:
+  - id: STIG-NET-0001
+    title: Network device must have Telnet service disabled
+    category: management_plane
+    field: telnet_enabled
+    operator: "=="
+    expected: false
+    severity: CRITICAL
+    remediation:
+      cisco: "no service telnet"
+      arista: "no management api telnet"
+      juniper: "delete system services telnet"
+      paloalto: "set deviceconfig system service disable-telnet yes"
+      fortinet: "config system interface\n  edit mgmt\n    unset allowaccess telnet\n  next\nend"
+      default: "Disable Telnet in management plane"
+
+  - id: STIG-NET-0002
+    title: Network device must enforce SSH version 2 for all management sessions
+    category: management_plane
+    field: ssh_version
+    operator: ">="
+    expected: 2
+    severity: HIGH
+    remediation:
+      cisco: "ip ssh version 2"
+      arista: "ip ssh version 2"
+      juniper: "set system services ssh protocol-version v2"
+      paloalto: "set deviceconfig system ssh-protocol-version v2"
+      fortinet: "config system global\n  set ssh-version 2\nend"
+      default: "Enforce SSHv2"
+
+  - id: STIG-NET-0010
+    title: Network device must require AAA authentication for all administrative access
+    category: auth
+    field: aaa_enabled
+    operator: "=="
+    expected: true
+    severity: CRITICAL
+    remediation:
+      cisco: "aaa new-model"
+      arista: "aaa authentication login default local"
+      juniper: "set system authentication-order [ tacplus radius local ]"
+      paloalto: "set mgt-config users admin permissions role-based superuser yes"
+      fortinet: "config system admin\n  edit admin\n    set remote-auth enable\n  next\nend"
+      default: "Enable AAA authentication"
+
+  - id: STIG-NET-0015
+    title: Network device must enforce minimum password length of 14 characters
+    category: auth
+    field: password_min_length
+    operator: ">="
+    expected: 14
+    severity: HIGH
+    remediation:
+      cisco: "security passwords min-length 14"
+      arista: "security passwords min-length 14"
+      juniper: "set system login password minimum-length 14"
+      paloalto: "set deviceconfig system password-profile minimum-length 14"
+      fortinet: "config system global\n  set admin-password-min-length 14\nend"
+      default: "Set minimum password length to 14"
+
+  - id: STIG-NET-0020
+    title: Network device must display DoD/Government approved advisory banner
+    category: auth
+    field: login_banner_configured
+    operator: "=="
+    expected: true
+    severity: HIGH
+    remediation:
+      cisco: "banner motd ^C DoD Approved Security Banner ^C"
+      arista: "banner motd ^C DoD Approved Security Banner ^C"
+      juniper: "set system login message \"DoD Approved Security Banner\""
+      paloalto: "set deviceconfig system login-banner \"DoD Approved Security Banner\""
+      fortinet: "config system global\n  set post-login-banner enable\nend"
+      default: "Configure STIG login banner"
+
+  - id: STIG-NET-0030
+    title: Network device must forward audit logs to central syslog host
+    category: logging
+    field: syslog_configured
+    operator: "=="
+    expected: true
+    severity: HIGH
+    remediation:
+      cisco: "logging host 10.0.0.50"
+      arista: "logging host 10.0.0.50"
+      juniper: "set system syslog host 10.0.0.50 any notice"
+      paloalto: "set shared log-settings syslog SYSLOG-01 server 10.0.0.50"
+      fortinet: "config log syslogd setting\n  set status enable\n  set server 10.0.0.50\nend"
+      default: "Configure syslog logging server"
+
+  - id: STIG-NET-0040
+    title: Network device must not use weak or legacy cryptography algorithms
+    category: crypto
+    field: weak_ciphers_present
+    operator: "=="
+    expected: false
+    severity: CRITICAL
+    remediation:
+      cisco: "no ip http secure-ciphersuite 3des"
+      arista: "no ip http ssl ciphersuite 3des"
+      juniper: "set system services ssh ciphers [ aes128-ctr aes256-ctr ]"
+      paloalto: "set deviceconfig system ssh-cipher-policy aes-gcm"
+      fortinet: "config system global\n  set strong-crypto enable\nend"
+      default: "Disable legacy weak ciphers"
