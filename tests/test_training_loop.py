@@ -63,7 +63,8 @@ def test_training_loop_end_to_end(client, db_session):
 
     # 5. Assert ParsedConfig schema was re-normalized and updated
     parsed_config = db_session.query(ParsedConfig).filter(ParsedConfig.device_id == device.id).first()
-    assert parsed_config.normalized_json["management_plane"]["telnet_enabled"] is False
+    assert parsed_config.normalized_json["management_plane"]["telnet_enabled"]["value"] is False
+    assert parsed_config.normalized_json["management_plane"]["telnet_enabled"]["derivation"] == "explicit"
     assert unknown_line not in parsed_config.normalized_json["unrecognized_lines"]
 
     # 6. Ingest a SECOND device with the exact SAME line.
@@ -76,7 +77,7 @@ def test_training_loop_end_to_end(client, db_session):
         mock_llm_second.assert_not_called()
 
     parsed_config2 = db_session.query(ParsedConfig).filter(ParsedConfig.device_id == device2.id).first()
-    assert parsed_config2.normalized_json["management_plane"]["telnet_enabled"] is False
+    assert parsed_config2.normalized_json["management_plane"]["telnet_enabled"]["value"] is False
     assert unknown_line not in parsed_config2.normalized_json["unrecognized_lines"]
     assert parsed_config2.parse_tier == 2
     assert parsed_config2.confidence_score is not None and parsed_config2.confidence_score >= 0.9

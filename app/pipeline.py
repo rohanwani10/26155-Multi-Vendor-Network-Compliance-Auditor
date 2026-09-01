@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.models import Device, ParsedConfig, PendingReview
 from app.parsers import normalize
+from app.parsers.schema import observed
 from app.tier2.fallback import classify_line, is_applicable, is_confident
 from app.vendor_detect import detect_vendor
 
@@ -50,7 +51,15 @@ def apply_tier2(db: Session, device: Device, parsed_config: ParsedConfig, vendor
     for line in schema["unrecognized_lines"]:
         result = classify_line(vendor, line)
         if is_confident(result) and is_applicable(result):
-            schema[result["category"]][result["field"]] = parse_typed_value(result["value"])
+            # Tier-2-applied: still real evidence tied to a real config line
+            # (derivation="explicit"), just classified via embedding-match or
+            # LLM instead of regex — confidence carries the classifier's own
+            # score rather than the 1.0 a deterministic regex match gets.
+            schema[result["category"]][result["field"]] = observed(
+                parse_typed_value(result["value"]),
+                evidence=[line],
+                confidence=result["confidence"],
+            )
             applied_confidences.append(result["confidence"])
         else:
             still_unrecognized.append(line)

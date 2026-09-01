@@ -14,7 +14,7 @@ import textfsm
 from ciscoconfparse2 import CiscoConfParse
 
 from app.parsers.common import classify_unrecognized
-from app.parsers.schema import empty_schema
+from app.parsers.schema import empty_schema, observed
 
 ACL_TEXTFSM_TEMPLATE = Path(__file__).parent / "textfsm_templates" / "acl_entries.textfsm"
 
@@ -56,29 +56,42 @@ RECOGNIZED_PATTERNS = [
 def normalize(text: str) -> dict:
     schema = empty_schema()
 
-    schema["management_plane"]["telnet_enabled"] = bool(
-        re.search(r"^\s*transport input.*\btelnet\b", text, re.IGNORECASE | re.MULTILINE)
-    )
-    schema["management_plane"]["ssh_enabled"] = bool(
-        re.search(r"^\s*transport input.*\bssh\b", text, re.IGNORECASE | re.MULTILINE)
-    )
-    ssh_version_match = re.search(r"^ip ssh version (\d)", text, re.IGNORECASE | re.MULTILINE)
-    schema["management_plane"]["ssh_version"] = int(ssh_version_match.group(1)) if ssh_version_match else 0
+    transport_input_lines = re.findall(r"^\s*transport input.*$", text, re.IGNORECASE | re.MULTILINE)
+    if transport_input_lines:
+        schema["management_plane"]["telnet_enabled"] = observed(
+            any("telnet" in line.lower() for line in transport_input_lines), evidence=transport_input_lines
+        )
+        schema["management_plane"]["ssh_enabled"] = observed(
+            any("ssh" in line.lower() for line in transport_input_lines), evidence=transport_input_lines
+        )
 
-    schema["auth"]["aaa_enabled"] = bool(
-        re.search(r"^aaa (new-model|authentication login)", text, re.IGNORECASE | re.MULTILINE)
-    )
+    ssh_version_match = re.search(r"^ip ssh version (\d)", text, re.IGNORECASE | re.MULTILINE)
+    if ssh_version_match:
+        schema["management_plane"]["ssh_version"] = observed(
+            int(ssh_version_match.group(1)), evidence=[ssh_version_match.group(0)]
+        )
+
+    aaa_match = re.search(r"^(no )?aaa (new-model|authentication login)", text, re.IGNORECASE | re.MULTILINE)
+    if aaa_match:
+        schema["auth"]["aaa_enabled"] = observed(not aaa_match.group(1), evidence=[aaa_match.group(0)])
+
     pwd_match = re.search(r"^security passwords min-length (\d+)", text, re.IGNORECASE | re.MULTILINE)
-    schema["auth"]["password_min_length"] = int(pwd_match.group(1)) if pwd_match else 0
-    schema["auth"]["login_banner_configured"] = bool(
-        re.search(r"^banner (motd|login|exec)", text, re.IGNORECASE | re.MULTILINE)
-    )
+    if pwd_match:
+        schema["auth"]["password_min_length"] = observed(int(pwd_match.group(1)), evidence=[pwd_match.group(0)])
+
+    banner_match = re.search(r"^banner (motd|login|exec)\b.*$", text, re.IGNORECASE | re.MULTILINE)
+    if banner_match:
+        schema["auth"]["login_banner_configured"] = observed(True, evidence=[banner_match.group(0)])
 
     syslog_hosts = re.findall(r"^logging host (\S+)", text, re.IGNORECASE | re.MULTILINE)
-    schema["logging"]["syslog_configured"] = bool(syslog_hosts)
+    if syslog_hosts:
+        schema["logging"]["syslog_configured"] = observed(True, evidence=syslog_hosts)
     schema["logging"]["syslog_servers"] = syslog_hosts
 
-    schema["crypto"]["weak_ciphers_present"] = bool(WEAK_CIPHER_RE.search(text))
+    # A full-text scan for a banned substring is exhaustive by nature — there
+    # is no "unknown" middle state the way there is for e.g. a VTY transport
+    # default: either the string appears in the file or it provably doesn't.
+    schema["crypto"]["weak_ciphers_present"] = observed(bool(WEAK_CIPHER_RE.search(text)))
 
     schema["acl_rules"] = _extract_acls(text)
     schema["unrecognized_lines"] = classify_unrecognized(text.splitlines(), RECOGNIZED_PATTERNS)

@@ -5,7 +5,7 @@ is direct line/block-based extraction."""
 import re
 
 from app.parsers.common import classify_unrecognized
-from app.parsers.schema import empty_schema
+from app.parsers.schema import empty_schema, observed
 
 RECOGNIZED_PATTERNS = [re.compile(r"^(#|config\s|edit\s|next$|end$|set\s)", re.IGNORECASE)]
 
@@ -16,34 +16,38 @@ def normalize_fortinet(text: str) -> dict:
     schema = empty_schema()
 
     telnet_match = re.search(r"^\s*set admin-telnet (enable|disable)", text, re.IGNORECASE | re.MULTILINE)
-    schema["management_plane"]["telnet_enabled"] = bool(telnet_match) and telnet_match.group(1) == "enable"
+    if telnet_match:
+        schema["management_plane"]["telnet_enabled"] = observed(
+            telnet_match.group(1) == "enable", evidence=[telnet_match.group(0)]
+        )
 
-    ssh_enabled = bool(re.search(r"^\s*set admin-ssh-port\b", text, re.IGNORECASE | re.MULTILINE))
-    schema["management_plane"]["ssh_enabled"] = ssh_enabled
-    schema["management_plane"]["ssh_version"] = 2 if ssh_enabled else 0
+    ssh_match = re.search(r"^\s*set admin-ssh-port\b.*$", text, re.IGNORECASE | re.MULTILINE)
+    if ssh_match:
+        schema["management_plane"]["ssh_enabled"] = observed(True, evidence=[ssh_match.group(0)])
+        schema["management_plane"]["ssh_version"] = observed(2, derivation="vendor_default", evidence=[ssh_match.group(0)])
 
-    schema["auth"]["aaa_enabled"] = bool(
-        re.search(r"^config user (radius|tacacs\+|group)\b", text, re.IGNORECASE | re.MULTILINE)
-    )
-    pwd_match = re.search(
-        r"^\s*set minimum-length (\d+)", text, re.IGNORECASE | re.MULTILINE
-    )
-    schema["auth"]["password_min_length"] = int(pwd_match.group(1)) if pwd_match else 0
-    schema["auth"]["login_banner_configured"] = bool(
-        re.search(r"^\s*set (pre|post)-login-banner enable", text, re.IGNORECASE | re.MULTILINE)
-    )
+    aaa_match = re.search(r"^config user (radius|tacacs\+|group)\b.*$", text, re.IGNORECASE | re.MULTILINE)
+    if aaa_match:
+        schema["auth"]["aaa_enabled"] = observed(True, evidence=[aaa_match.group(0)])
 
-    syslog_enabled = bool(
-        re.search(r"config log syslogd setting.*?set status enable", text, re.IGNORECASE | re.DOTALL)
-    )
+    pwd_match = re.search(r"^\s*set minimum-length (\d+)", text, re.IGNORECASE | re.MULTILINE)
+    if pwd_match:
+        schema["auth"]["password_min_length"] = observed(int(pwd_match.group(1)), evidence=[pwd_match.group(0)])
+
+    banner_match = re.search(r"^\s*set (pre|post)-login-banner enable", text, re.IGNORECASE | re.MULTILINE)
+    if banner_match:
+        schema["auth"]["login_banner_configured"] = observed(True, evidence=[banner_match.group(0)])
+
+    syslog_block = re.search(r"config log syslogd setting.*?set status enable", text, re.IGNORECASE | re.DOTALL)
     syslog_servers = re.findall(
         r"config log syslogd setting.*?set server \"?([^\"\n]+)\"?", text, re.IGNORECASE | re.DOTALL
     )
-    schema["logging"]["syslog_configured"] = syslog_enabled
+    if syslog_block:
+        schema["logging"]["syslog_configured"] = observed(True, evidence=[syslog_block.group(0)])
     schema["logging"]["syslog_servers"] = syslog_servers
 
-    schema["crypto"]["weak_ciphers_present"] = bool(
-        re.search(r"\b(3des|des-cbc|rc4|md5)\b", text, re.IGNORECASE)
+    schema["crypto"]["weak_ciphers_present"] = observed(
+        bool(re.search(r"\b(3des|des-cbc|rc4|md5)\b", text, re.IGNORECASE))
     )
 
     schema["acl_rules"] = _extract_acls(text)

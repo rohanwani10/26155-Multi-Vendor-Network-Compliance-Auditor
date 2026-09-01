@@ -6,7 +6,7 @@ running-config template, so this is a direct line-based extraction."""
 import re
 
 from app.parsers.common import classify_unrecognized
-from app.parsers.schema import empty_schema
+from app.parsers.schema import empty_schema, observed
 
 RECOGNIZED_PATTERNS = [re.compile(r"^(##|set\s)", re.IGNORECASE)]
 
@@ -16,35 +16,48 @@ ACL_TERM_RE = re.compile(r"^set firewall filter (\S+) term (\S+) (from|then) (.+
 def normalize_juniper(text: str) -> dict:
     schema = empty_schema()
 
-    schema["management_plane"]["telnet_enabled"] = bool(
-        re.search(r"^set system services telnet\b", text, re.IGNORECASE | re.MULTILINE)
-    )
-    ssh_enabled = bool(re.search(r"^set system services ssh\b", text, re.IGNORECASE | re.MULTILINE))
-    schema["management_plane"]["ssh_enabled"] = ssh_enabled
-    # Modern Junos only supports SSHv2 once ssh service is enabled.
-    schema["management_plane"]["ssh_version"] = 2 if ssh_enabled else 0
-
-    schema["auth"]["aaa_enabled"] = bool(
-        re.search(
-            r"^set system (authentication-order|radius-server|tacplus-server)\b",
-            text,
-            re.IGNORECASE | re.MULTILINE,
+    telnet_match = re.search(r"^set system services telnet\b", text, re.IGNORECASE | re.MULTILINE)
+    ssh_match = re.search(r"^set system services ssh\b", text, re.IGNORECASE | re.MULTILINE)
+    # These are two independent opt-in directives in Junos, so "neither line
+    # is present" and "ssh present, telnet absent" are both real, distinct,
+    # fully-observed states here — not signal-not-found the way a shared
+    # Cisco `transport input` line's absence would be.
+    if telnet_match or ssh_match:
+        schema["management_plane"]["telnet_enabled"] = observed(
+            bool(telnet_match), evidence=[m.group(0) for m in (telnet_match, ssh_match) if m]
         )
+        schema["management_plane"]["ssh_enabled"] = observed(bool(ssh_match), evidence=[ssh_match.group(0)] if ssh_match else [])
+        if ssh_match:
+            # Modern Junos only supports SSHv2 once the ssh service is enabled
+            # at all — a documented platform fact, not a guess, but only
+            # applicable once we've actually observed ssh being turned on.
+            schema["management_plane"]["ssh_version"] = observed(2, derivation="vendor_default", evidence=[ssh_match.group(0)])
+
+    aaa_match = re.search(
+        r"^set system (authentication-order|radius-server|tacplus-server)\b",
+        text,
+        re.IGNORECASE | re.MULTILINE,
     )
+    if aaa_match:
+        schema["auth"]["aaa_enabled"] = observed(True, evidence=[aaa_match.group(0)])
+
     pwd_match = re.search(
         r"^set system login password minimum-length (\d+)", text, re.IGNORECASE | re.MULTILINE
     )
-    schema["auth"]["password_min_length"] = int(pwd_match.group(1)) if pwd_match else 0
-    schema["auth"]["login_banner_configured"] = bool(
-        re.search(r"^set system login message\b", text, re.IGNORECASE | re.MULTILINE)
-    )
+    if pwd_match:
+        schema["auth"]["password_min_length"] = observed(int(pwd_match.group(1)), evidence=[pwd_match.group(0)])
+
+    banner_match = re.search(r"^set system login message\b.*$", text, re.IGNORECASE | re.MULTILINE)
+    if banner_match:
+        schema["auth"]["login_banner_configured"] = observed(True, evidence=[banner_match.group(0)])
 
     syslog_hosts = re.findall(r"^set system syslog host (\S+)", text, re.IGNORECASE | re.MULTILINE)
-    schema["logging"]["syslog_configured"] = bool(syslog_hosts)
+    if syslog_hosts:
+        schema["logging"]["syslog_configured"] = observed(True, evidence=syslog_hosts)
     schema["logging"]["syslog_servers"] = syslog_hosts
 
-    schema["crypto"]["weak_ciphers_present"] = bool(
-        re.search(r"\b(3des|des-cbc|rc4|md5)\b", text, re.IGNORECASE)
+    schema["crypto"]["weak_ciphers_present"] = observed(
+        bool(re.search(r"\b(3des|des-cbc|rc4|md5)\b", text, re.IGNORECASE))
     )
 
     schema["acl_rules"] = _extract_acls(text)

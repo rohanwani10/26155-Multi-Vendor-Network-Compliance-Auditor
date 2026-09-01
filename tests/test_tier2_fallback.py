@@ -37,9 +37,10 @@ def test_low_confidence_result_queues_for_training_not_silently_applied(db_sessi
         db_session.commit()
 
     parsed = db_session.query(ParsedConfig).filter_by(device_id=device.id).one()
-    # Not silently applied: the schema keeps its default, unaffected by the
-    # low-confidence suggestion.
-    assert parsed.normalized_json["management_plane"]["telnet_enabled"] is False
+    # Not silently applied: the schema keeps its unexamined default,
+    # unaffected by the low-confidence suggestion — not even a guessed False.
+    assert parsed.normalized_json["management_plane"]["telnet_enabled"]["derivation"] == "absent_unknown"
+    assert parsed.normalized_json["management_plane"]["telnet_enabled"]["value"] is None
 
     pending = db_session.query(PendingReview).filter_by(device_id=device.id).all()
     assert len(pending) == 1

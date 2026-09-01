@@ -50,6 +50,13 @@ def _eval_condition(actual: Any, operator: str, expected: Any) -> bool:
     return actual == expected
 
 
+#: Only an Observation with one of these derivations may back a Pass/Fail
+#: verdict (Correction 1). Anything else — most importantly
+#: derivation="absent_unknown", meaning no adapter found any signal for this
+#: field at all — reports Manual Review Required instead of guessing.
+VERDICT_DERIVATIONS = {"explicit", "vendor_default"}
+
+
 def evaluate_rule(rule: dict, schema: dict, vendor: str, framework_name: str = "CIS") -> dict:
     category = rule.get("category", "")
     field = rule.get("field", "")
@@ -57,10 +64,25 @@ def evaluate_rule(rule: dict, schema: dict, vendor: str, framework_name: str = "
     expected = rule.get("expected")
 
     cat_data = schema.get(category, {}) if isinstance(schema, dict) else {}
-    actual_val = cat_data.get(field) if isinstance(cat_data, dict) else None
+    observation = cat_data.get(field) if isinstance(cat_data, dict) else None
 
-    passed = _eval_condition(actual_val, operator, expected)
-    status = "pass" if passed else "fail"
+    if isinstance(observation, dict) and "derivation" in observation:
+        # A real Observation (see app.parsers.schema) — only trust it for a
+        # verdict if its provenance says it was actually examined.
+        actual_val = observation["value"]
+        derivation = observation["derivation"]
+    else:
+        # Backward-compatible path for a caller passing a raw schema (e.g. a
+        # hand-built dict in a test, or a future caller not yet migrated to
+        # Observations) — treat a bare value as already-examined.
+        actual_val = observation
+        derivation = "explicit"
+
+    if derivation not in VERDICT_DERIVATIONS:
+        status = "manual_review"
+    else:
+        passed = _eval_condition(actual_val, operator, expected)
+        status = "pass" if passed else "fail"
 
     remediations = rule.get("remediation", {})
     remediation_text = remediations.get(vendor.lower(), remediations.get("default", ""))

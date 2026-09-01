@@ -51,7 +51,10 @@ def test_e2e_known_vendor_full_pipeline(client, db_session):
     assert report_data["device"]["filename"] == "cisco_ios_1.cfg"
     assert report_data["framework"] == "CIS"
     assert report_data["total_rules"] > 0
-    assert report_data["pass_count"] + report_data["fail_count"] == report_data["total_rules"]
+    # Not necessarily equal anymore: a rule whose backing field was never
+    # actually observed reports Manual Review Required rather than a guessed
+    # Pass/Fail (Correction 1), so total_rules can exceed pass+fail.
+    assert report_data["pass_count"] + report_data["fail_count"] <= report_data["total_rules"]
     assert "management_plane" in report_data["grouped_findings"]
 
     # 5. Generate PDF report and verify binary content

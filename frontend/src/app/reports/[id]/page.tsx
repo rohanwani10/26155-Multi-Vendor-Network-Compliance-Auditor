@@ -2,14 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import { Download, CheckCircle2, XCircle, Copy, Check, Loader2, RefreshCw } from "lucide-react";
+import { Download, CheckCircle2, XCircle, HelpCircle, Copy, Check, Loader2, RefreshCw } from "lucide-react";
 
 interface Finding {
   id: number;
   rule_id: string;
   title: string;
   category: string;
-  status: "pass" | "fail";
+  status: "pass" | "fail" | "manual_review";
   severity: string;
   remediation_text: string | null;
 }
@@ -250,10 +250,18 @@ export default function ReportPage() {
                           <CheckCircle2 className="w-3 h-3" strokeWidth={2} />
                           Pass
                         </span>
-                      ) : (
+                      ) : f.status === "fail" ? (
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-xs font-medium bg-ember/10 text-ember">
                           <XCircle className="w-3 h-3" strokeWidth={2} />
                           Fail
+                        </span>
+                      ) : (
+                        <span
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-xs font-medium bg-canvas text-ink-soft border border-hairline"
+                          title="No adapter found a real signal for this field — not guessed as Pass or Fail"
+                        >
+                          <HelpCircle className="w-3 h-3" strokeWidth={2} />
+                          Manual Review
                         </span>
                       )}
                     </td>
