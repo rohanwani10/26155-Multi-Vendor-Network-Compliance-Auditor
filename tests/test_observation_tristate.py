@@ -69,12 +69,21 @@ def test_every_verdict_is_backed_by_real_evidence():
     assert not violations, "Verdicts issued on unexamined data:\n" + "\n".join(violations)
 
 
+# Pinned to an inline minimal config, not the shared juniper_1.cfg fixture:
+# item 2 (Correction 3) deliberately enriched that fixture to *prove* the
+# adapter's declared aaa/password-length coverage, so it's no longer a case
+# with zero signal. The tri-state behavior these pin still needs a genuine
+# zero-signal case to regress against — this one, kept minimal on purpose.
+MINIMAL_JUNIPER_CONFIG = """## Last commit
+set system host-name MINIMAL-RTR
+set system services ssh
+"""
+
+
 def test_juniper_missing_aaa_is_manual_review_not_a_false_pass():
-    """Pinned regression case from the audit table: the Juniper fixture has
-    no aaa/radius/tacacs line at all, so CIS-2.1 must be Manual Review, not
-    a confident (and wrong) PASS."""
-    text = (FIXTURES / VENDOR_FIXTURES["juniper"]).read_text()
-    schema = normalize("juniper", text)
+    """No aaa/radius/tacacs line at all -> CIS-2.1 must be Manual Review,
+    not a confident (and wrong) PASS."""
+    schema = normalize("juniper", MINIMAL_JUNIPER_CONFIG)
     rule = next(r for r in CIS_RULES if r["id"] == "CIS-2.1")
 
     result = evaluate_rule(rule, schema, vendor="juniper", framework_name="CIS")
@@ -82,11 +91,9 @@ def test_juniper_missing_aaa_is_manual_review_not_a_false_pass():
 
 
 def test_juniper_missing_password_length_is_manual_review_not_a_false_fail():
-    """Pinned regression case: no minimum-length line exists in the Juniper
-    fixture, so CIS-2.2 must be Manual Review, not a confident (and possibly
-    wrong) FAIL against the default of 0."""
-    text = (FIXTURES / VENDOR_FIXTURES["juniper"]).read_text()
-    schema = normalize("juniper", text)
+    """No minimum-length line -> CIS-2.2 must be Manual Review, not a
+    confident (and possibly wrong) FAIL against a default of 0."""
+    schema = normalize("juniper", MINIMAL_JUNIPER_CONFIG)
     rule = next(r for r in CIS_RULES if r["id"] == "CIS-2.2")
 
     result = evaluate_rule(rule, schema, vendor="juniper", framework_name="CIS")

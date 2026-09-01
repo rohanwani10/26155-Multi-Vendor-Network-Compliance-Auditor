@@ -57,6 +57,7 @@ def _render_pdf_fpdf(
     findings: list[Finding],
     pass_count: int,
     fail_count: int,
+    manual_review_count: int = 0,
 ) -> bytes:
     from fpdf import FPDF
 
@@ -82,8 +83,35 @@ def _render_pdf_fpdf(
 
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 11)
-    pdf.cell(0, 8, f"Summary: {len(findings)} Total Rules  |  {pass_count} Passed  |  {fail_count} Failed", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(
+        0, 8,
+        f"Summary: {len(findings)} Total Rules  |  {pass_count} Passed  |  {fail_count} Failed"
+        + (f"  |  {manual_review_count} Manual Review" if manual_review_count else ""),
+        new_x="LMARGIN", new_y="NEXT",
+    )
+
+    # Coverage indicator (Correction 3): how many controls this device's
+    # parsed config actually gave the evaluator enough real signal to judge.
+    evaluable = pass_count + fail_count
+    pdf.set_font("Helvetica", "", 9)
+    pdf.set_text_color(71, 85, 105)
+    pdf.cell(
+        0, 6,
+        f"Coverage: {evaluable} of {len(findings)} {framework} controls evaluable for this device"
+        + (f"; {manual_review_count} require configuration data this adapter did not extract" if manual_review_count else ""),
+        new_x="LMARGIN", new_y="NEXT",
+    )
+    pdf.set_text_color(30, 41, 59)
     pdf.ln(4)
+
+    if manual_review_count:
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.cell(0, 6, "Manual Review Required (no confident data to evaluate):", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_font("Helvetica", "", 9)
+        for f in findings:
+            if f.status == "manual_review":
+                pdf.cell(0, 5, f"  - {f.rule_id}: {f.title}", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(4)
 
     grouped = _group_findings(findings)
     for cat, cat_findings in grouped.items():
@@ -103,7 +131,7 @@ def _render_pdf_fpdf(
         pdf.set_font("Helvetica", "", 9)
         pdf.set_text_color(30, 41, 59)
         for f in cat_findings:
-            status_str = f.status.upper()
+            status_str = "REVIEW" if f.status == "manual_review" else f.status.upper()
             sev_str = f.severity or "-"
             remed = (
                 f.remediation_text
@@ -135,8 +163,9 @@ def device_report_pdf(
 
     pass_count = sum(1 for f in findings if f.status == "pass")
     fail_count = sum(1 for f in findings if f.status == "fail")
+    manual_review_count = sum(1 for f in findings if f.status == "manual_review")
 
-    pdf_bytes = _render_pdf_fpdf(device, framework, findings, pass_count, fail_count)
+    pdf_bytes = _render_pdf_fpdf(device, framework, findings, pass_count, fail_count, manual_review_count)
 
     return Response(
         content=pdf_bytes,
@@ -159,6 +188,7 @@ def device_report_json(
 
     pass_count = sum(1 for f in findings if f.status == "pass")
     fail_count = sum(1 for f in findings if f.status == "fail")
+    manual_review_count = sum(1 for f in findings if f.status == "manual_review")
     grouped = _group_findings(findings)
 
     return {
@@ -171,6 +201,15 @@ def device_report_json(
         "framework": framework,
         "pass_count": pass_count,
         "fail_count": fail_count,
+        "manual_review_count": manual_review_count,
+        # Coverage indicator (Correction 3): how many controls this specific
+        # device's parsed config actually gave the evaluator enough real
+        # signal to judge, versus how many need configuration data no
+        # adapter extracted here.
+        "coverage": {
+            "evaluable_count": pass_count + fail_count,
+            "total_controls": len(findings),
+        },
         "total_rules": len(findings),
         "grouped_findings": {
             cat: [

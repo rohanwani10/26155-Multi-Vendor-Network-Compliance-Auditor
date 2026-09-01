@@ -9,6 +9,18 @@ from app.parsers.schema import empty_schema, observed
 
 RECOGNIZED_PATTERNS = [re.compile(r"^set\s", re.IGNORECASE)]
 
+#: See ios_style.DECLARED_COVERAGE — same contract.
+DECLARED_COVERAGE = frozenset({
+    "management_plane.telnet_enabled",
+    "management_plane.ssh_enabled",
+    "management_plane.ssh_version",
+    "auth.aaa_enabled",
+    "auth.password_min_length",
+    "auth.login_banner_configured",
+    "logging.syslog_configured",
+    "crypto.weak_ciphers_present",
+})
+
 ACL_RULE_RE = re.compile(
     r"set rulebase security rules (\S+) from (\S+) to (\S+) "
     r"source (\S+) destination (\S+) application (\S+) action (\S+)"

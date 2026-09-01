@@ -12,6 +12,19 @@ RECOGNIZED_PATTERNS = [re.compile(r"^(##|set\s)", re.IGNORECASE)]
 
 ACL_TERM_RE = re.compile(r"^set firewall filter (\S+) term (\S+) (from|then) (.+)$")
 
+#: See ios_style.DECLARED_COVERAGE — same contract, enforced against this
+#: vendor's own fixture by tests/test_coverage_matrix.py.
+DECLARED_COVERAGE = frozenset({
+    "management_plane.telnet_enabled",
+    "management_plane.ssh_enabled",
+    "management_plane.ssh_version",
+    "auth.aaa_enabled",
+    "auth.password_min_length",
+    "auth.login_banner_configured",
+    "logging.syslog_configured",
+    "crypto.weak_ciphers_present",
+})
+
 
 def normalize_juniper(text: str) -> dict:
     schema = empty_schema()

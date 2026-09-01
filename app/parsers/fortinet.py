@@ -11,6 +11,18 @@ RECOGNIZED_PATTERNS = [re.compile(r"^(#|config\s|edit\s|next$|end$|set\s)", re.I
 
 POLICY_FIELDS = ("srcintf", "dstintf", "action", "service")
 
+#: See ios_style.DECLARED_COVERAGE — same contract.
+DECLARED_COVERAGE = frozenset({
+    "management_plane.telnet_enabled",
+    "management_plane.ssh_enabled",
+    "management_plane.ssh_version",
+    "auth.aaa_enabled",
+    "auth.password_min_length",
+    "auth.login_banner_configured",
+    "logging.syslog_configured",
+    "crypto.weak_ciphers_present",
+})
+
 
 def normalize_fortinet(text: str) -> dict:
     schema = empty_schema()

@@ -18,6 +18,21 @@ from app.parsers.schema import empty_schema, observed
 
 ACL_TEXTFSM_TEMPLATE = Path(__file__).parent / "textfsm_templates" / "acl_entries.textfsm"
 
+#: Fields this adapter has real extraction logic for (Correction 3's
+#: coverage matrix) — declares capability, not "this file happens to have
+#: it." tests/test_coverage_matrix.py enforces that the bundled fixture
+#: actually demonstrates every field declared here.
+DECLARED_COVERAGE = frozenset({
+    "management_plane.telnet_enabled",
+    "management_plane.ssh_enabled",
+    "management_plane.ssh_version",
+    "auth.aaa_enabled",
+    "auth.password_min_length",
+    "auth.login_banner_configured",
+    "logging.syslog_configured",
+    "crypto.weak_ciphers_present",
+})
+
 WEAK_CIPHER_RE = re.compile(r"\b(3des|des-cbc|rc4)\b", re.IGNORECASE)
 
 # Lines recognized as valid IOS-style syntax, whether or not they map to a

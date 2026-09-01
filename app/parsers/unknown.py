@@ -1,5 +1,9 @@
 from app.parsers.schema import empty_schema
 
+#: No extraction logic at all for a truly unrecognized vendor — every field
+#: is honestly absent_unknown, so this adapter declares zero coverage.
+DECLARED_COVERAGE: frozenset = frozenset()
+
 
 def normalize_unknown(text: str) -> dict:
     """Vendor entirely unrecognized: Tier-1 can't map anything, so every

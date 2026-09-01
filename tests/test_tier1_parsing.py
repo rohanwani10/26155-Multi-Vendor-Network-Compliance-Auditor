@@ -57,10 +57,11 @@ def test_juniper_fields_populated():
     assert schema["logging"]["syslog_configured"]["value"] is True
     assert schema["logging"]["syslog_servers"] == ["10.0.0.50"]
 
-    # No aaa/radius/tacplus line exists in this fixture at all — this must be
-    # Manual Review territory (Correction 1), not a guessed False.
-    assert schema["auth"]["aaa_enabled"]["derivation"] == "absent_unknown"
-    assert schema["auth"]["aaa_enabled"]["value"] is None
+    # Enriched by item 2 (Correction 3) to prove the adapter's declared aaa
+    # coverage — see tests/test_coverage_matrix.py for the enforcement test,
+    # and test_observation_tristate.py for the zero-signal regression case.
+    assert schema["auth"]["aaa_enabled"]["derivation"] == "explicit"
+    assert schema["auth"]["aaa_enabled"]["value"] is True
 
 
 def test_injected_nonsense_line_is_captured_not_dropped():

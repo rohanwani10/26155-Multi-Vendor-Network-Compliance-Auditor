@@ -24,6 +24,8 @@ interface ReportData {
   framework: string;
   pass_count: number;
   fail_count: number;
+  manual_review_count: number;
+  coverage: { evaluable_count: number; total_controls: number };
   total_rules: number;
   grouped_findings: Record<string, Finding[]>;
 }
@@ -122,7 +124,7 @@ export default function ReportPage() {
     );
   }
 
-  const { device, framework, pass_count, fail_count, total_rules, grouped_findings } = report;
+  const { device, framework, pass_count, fail_count, manual_review_count, coverage, total_rules, grouped_findings } = report;
 
   return (
     <div className="space-y-6">
@@ -190,10 +192,21 @@ export default function ReportPage() {
             </button>
           ))}
         </div>
+
+        {/* Coverage indicator (Correction 3) */}
+        {manual_review_count > 0 && (
+          <p className="mt-3 text-xs text-mid-gray">
+            <span className="text-ink font-medium">
+              {coverage.evaluable_count} of {coverage.total_controls}
+            </span>{" "}
+            {framework} controls evaluable for this device — {manual_review_count} require
+            configuration data this adapter did not extract from the uploaded file.
+          </p>
+        )}
       </div>
 
       {/* Summary stats */}
-      <div className="grid grid-cols-3 gap-4">
+      <div className={`grid gap-4 ${manual_review_count > 0 ? "grid-cols-4" : "grid-cols-3"}`}>
         <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5 text-center">
           <div className="text-heading font-semibold text-ink">{total_rules}</div>
           <div className="text-xs uppercase font-medium text-mid-gray tracking-wide mt-1">
@@ -212,6 +225,14 @@ export default function ReportPage() {
             Failed
           </div>
         </div>
+        {manual_review_count > 0 && (
+          <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5 text-center">
+            <div className="text-heading font-semibold text-ink-soft">{manual_review_count}</div>
+            <div className="text-xs uppercase font-medium text-mid-gray tracking-wide mt-1">
+              Manual review
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Findings by category */}
