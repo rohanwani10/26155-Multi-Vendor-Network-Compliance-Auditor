@@ -1,57 +1,51 @@
-"""Congestion & Multi-WAN Link Advisory Engine using Local Ollama LLM."""
+"""Congestion & Multi-WAN Link Advisory Engine using Local Ollama LLM.
+
+Reasons over telemetry collected in app.telemetry.collector — real, live
+interface/reachability probes of this host, not fixture data."""
 
 import os
 import requests
 from sqlalchemy.orm import Session
-from app.models import TelemetryRecord
-from app.telemetry.collector import seed_demo_telemetry_if_empty
+from app.telemetry.collector import collect_live_telemetry
 
 OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 
 
-def _prompt_llm_advisory(prompt: str) -> str:
-    """Send health advisory prompt to local Ollama (or fallback text)."""
+def _prompt_llm_advisory(prompt: str, fallback: str) -> str:
+    """Send the health advisory prompt to local Ollama; fall back to a
+    template built from the same real numbers if it's offline or un-pulled."""
     try:
         url = f"{OLLAMA_HOST}/api/generate"
         payload = {"model": OLLAMA_MODEL, "prompt": prompt, "stream": False}
-        resp = requests.post(url, json=payload, timeout=4)
+        resp = requests.post(url, json=payload, timeout=15)
         if resp.status_code == 200:
             text = resp.json().get("response", "").strip()
             if text:
                 return text
     except Exception:
         pass
-
-    # Deterministic fallback response when Ollama is offline or un-pulled
-    return (
-        "AIR-GAPPED LINK ADVISORY: Primary link WAN1_PRIMARY has exceeded critical saturation thresholds "
-        "(utilization 89.4%, loss 2.8%). Recommended Action: Reroute non-critical traffic to WAN2_SECONDARY "
-        "and enable BGP route damping on Gi0/0/0."
-    )
+    return fallback
 
 
 def generate_network_health_analysis(db: Session) -> dict:
-    """Analyze current telemetry metrics, identify congestion spikes, and build Multi-WAN advisories."""
-    seed_demo_telemetry_if_empty(db)
+    """Probe this host's real network interfaces and reachability, detect
+    congestion, and build a Multi-WAN advisory from what was actually observed."""
+    records = collect_live_telemetry(db)
 
-    records = (
-        db.query(TelemetryRecord)
-        .order_by(TelemetryRecord.timestamp.desc())
-        .limit(20)
-        .all()
-    )
-
-    latest_by_interface: dict[str, TelemetryRecord] = {}
-    for r in records:
-        if r.interface_name not in latest_by_interface:
-            latest_by_interface[r.interface_name] = r
-
-    active_links = list(latest_by_interface.values())
+    if not records:
+        return {
+            "status": "no_connectivity",
+            "total_interfaces_monitored": 0,
+            "congestion_spikes": [],
+            "multi_wan_comparison": None,
+            "ai_advisory": "No active network interface with a routable address was detected on this host.",
+            "metrics": [],
+        }
 
     # Detect congestion spikes (> 80% utilization or > 1% packet loss)
     spikes = []
-    for link in active_links:
+    for link in records:
         if link.utilization_pct >= 80.0 or link.packet_loss_pct >= 1.0:
             spikes.append(
                 {
@@ -61,47 +55,67 @@ def generate_network_health_analysis(db: Session) -> dict:
                     "utilization_pct": link.utilization_pct,
                     "latency_ms": link.latency_ms,
                     "packet_loss_pct": link.packet_loss_pct,
-                    "message": f"High congestion spike on {link.interface_name} ({link.wan_tag}): {link.utilization_pct}% utilization, {link.packet_loss_pct}% loss.",
+                    "message": f"High congestion on {link.interface_name} ({link.wan_tag}): {link.utilization_pct}% utilization, {link.packet_loss_pct}% loss.",
                 }
             )
 
-    # Multi-WAN Comparison
-    wan1 = next((l for l in active_links if "WAN1" in l.wan_tag.upper()), None)
-    wan2 = next((l for l in active_links if "WAN2" in l.wan_tag.upper()), None)
+    primary = records[0]
+    secondary = records[1] if len(records) > 1 else None
+
+    def _wan_status(link):
+        return {
+            "name": link.wan_tag,
+            "interface": link.interface_name,
+            "utilization_pct": link.utilization_pct,
+            "latency_ms": link.latency_ms,
+            "loss_pct": link.packet_loss_pct,
+            "status": "Congested" if link.utilization_pct > 80 else "Optimal",
+        }
 
     comparison = {
-        "primary_wan": {
-            "name": wan1.wan_tag if wan1 else "WAN1",
-            "interface": wan1.interface_name if wan1 else "N/A",
-            "utilization_pct": wan1.utilization_pct if wan1 else 0.0,
-            "latency_ms": wan1.latency_ms if wan1 else 0.0,
-            "loss_pct": wan1.packet_loss_pct if wan1 else 0.0,
-            "status": "Congested" if (wan1 and wan1.utilization_pct > 80) else "Optimal",
-        },
-        "secondary_wan": {
-            "name": wan2.wan_tag if wan2 else "WAN2",
-            "interface": wan2.interface_name if wan2 else "N/A",
-            "utilization_pct": wan2.utilization_pct if wan2 else 0.0,
-            "latency_ms": wan2.latency_ms if wan2 else 0.0,
-            "loss_pct": wan2.packet_loss_pct if wan2 else 0.0,
-            "status": "Congested" if (wan2 and wan2.utilization_pct > 80) else "Optimal",
-        },
-        "recommended_path": "WAN2_SECONDARY" if (wan1 and wan1.utilization_pct > 80) else "WAN1_PRIMARY",
+        "primary_wan": _wan_status(primary),
+        "secondary_wan": _wan_status(secondary) if secondary else None,
+        "recommended_path": (
+            secondary.wan_tag
+            if secondary and primary.utilization_pct > 80 and secondary.utilization_pct <= 80
+            else primary.wan_tag
+        ),
     }
 
-    # Generate AI Advisory prompt
+    # Deterministic fallback (used verbatim if Ollama is offline): built from
+    # this run's real numbers, not a canned scenario.
+    if secondary:
+        fallback = (
+            f"Live diagnostics: {primary.interface_name} ({primary.wan_tag}) at "
+            f"{primary.utilization_pct}% utilization, {primary.packet_loss_pct}% loss, "
+            f"{primary.latency_ms}ms latency; {secondary.interface_name} ({secondary.wan_tag}) at "
+            f"{secondary.utilization_pct}% utilization. "
+            f"{'Recommend shifting traffic to ' + secondary.interface_name + '.' if comparison['recommended_path'] == secondary.wan_tag else 'Primary link is within normal range.'}"
+        )
+    else:
+        fallback = (
+            f"Live diagnostics: {primary.interface_name} is the only active interface detected, at "
+            f"{primary.utilization_pct}% utilization, {primary.packet_loss_pct}% loss, "
+            f"{primary.latency_ms}ms latency. No secondary link is available for failover."
+        )
+
     prompt = (
-        f"Network Telemetry Status:\n"
-        f"WAN1 (Gi0/0/0): Utilization {comparison['primary_wan']['utilization_pct']}%, Loss {comparison['primary_wan']['loss_pct']}%, Latency {comparison['primary_wan']['latency_ms']}ms\n"
-        f"WAN2 (Gi0/0/1): Utilization {comparison['secondary_wan']['utilization_pct']}%, Loss {comparison['secondary_wan']['loss_pct']}%, Latency {comparison['secondary_wan']['latency_ms']}ms\n"
-        f"Provide a 2-sentence executive network link advisory for routing optimization."
+        f"Real-time network telemetry for host interface {primary.interface_name} ({primary.wan_tag}): "
+        f"utilization {primary.utilization_pct}%, loss {primary.packet_loss_pct}%, latency {primary.latency_ms}ms.\n"
+        + (
+            f"Secondary interface {secondary.interface_name} ({secondary.wan_tag}): "
+            f"utilization {secondary.utilization_pct}%, loss {secondary.packet_loss_pct}%, latency {secondary.latency_ms}ms.\n"
+            if secondary
+            else "No secondary interface is active.\n"
+        )
+        + "Provide a 2-sentence executive network link advisory for routing optimization based on these actual readings."
     )
 
-    ai_advisory = _prompt_llm_advisory(prompt)
+    ai_advisory = _prompt_llm_advisory(prompt, fallback)
 
     return {
         "status": "ok",
-        "total_interfaces_monitored": len(active_links),
+        "total_interfaces_monitored": len(records),
         "congestion_spikes": spikes,
         "multi_wan_comparison": comparison,
         "ai_advisory": ai_advisory,
@@ -117,6 +131,6 @@ def generate_network_health_analysis(db: Session) -> dict:
                 "jitter_ms": r.jitter_ms,
                 "timestamp": r.timestamp.isoformat() if r.timestamp else None,
             }
-            for r in active_links
+            for r in records
         ],
     }

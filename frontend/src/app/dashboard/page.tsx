@@ -3,17 +3,15 @@
 import { useState, useEffect } from "react";
 import Link from "next/link";
 import {
-  LayoutDashboard,
   ShieldAlert,
   CheckCircle2,
-  XCircle,
   AlertTriangle,
   Download,
   Loader2,
   Activity,
-  Zap,
   Radio,
   Cpu,
+  RefreshCw,
 } from "lucide-react";
 
 interface DeviceSummary {
@@ -45,6 +43,7 @@ interface WanStatus {
 }
 
 interface TelemetryHealthData {
+  status: string;
   total_interfaces_monitored: number;
   congestion_spikes: {
     interface: string;
@@ -57,53 +56,64 @@ interface TelemetryHealthData {
   }[];
   multi_wan_comparison: {
     primary_wan: WanStatus;
-    secondary_wan: WanStatus;
+    secondary_wan: WanStatus | null;
     recommended_path: string;
-  };
+  } | null;
   ai_advisory: string;
+  metrics: { device_name: string }[];
 }
 
 const API_BASE = "http://localhost:8000";
 
+const SEVERITY_BADGE: Record<string, string> = {
+  CRITICAL: "bg-ember text-paper",
+  HIGH: "bg-ember/10 text-ember",
+  MEDIUM: "bg-canvas text-ink-soft border border-hairline",
+  LOW: "border border-hairline text-mid-gray",
+};
+
+const SEVERITY_BAR: Record<string, string> = {
+  CRITICAL: "bg-ember text-paper",
+  HIGH: "bg-ember/25 text-ember",
+  MEDIUM: "bg-ink-soft text-paper",
+  LOW: "bg-hairline text-ink-soft",
+};
+
 export default function DashboardPage() {
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [telemetry, setTelemetry] = useState<TelemetryHealthData | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [telemetryLoading, setTelemetryLoading] = useState(true);
 
-  const fetchData = async () => {
-    try {
-      try {
-        const statsRes = await fetch(`${API_BASE}/api/dashboard/stats`);
-        if (statsRes.ok) {
-          setStats(await statsRes.json());
-        }
-      } catch (err) {
-        console.error("Failed to fetch dashboard stats:", err);
-      }
-
-      try {
-        const telemetryRes = await fetch(`${API_BASE}/api/telemetry/health`);
-        if (telemetryRes.ok) {
-          setTelemetry(await telemetryRes.json());
-        }
-      } catch (err) {
-        console.error("Failed to fetch telemetry health:", err);
-      }
-    } finally {
-      setLoading(false);
-    }
+  const fetchTelemetry = () => {
+    setTelemetryLoading(true);
+    return fetch(`${API_BASE}/api/telemetry/health`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data && setTelemetry(data))
+      .catch((err) => console.error("Failed to fetch telemetry health:", err))
+      .finally(() => setTelemetryLoading(false));
   };
 
   useEffect(() => {
-    fetchData();
+    // Independent requests: compliance stats resolve in well under a second,
+    // while telemetry/health calls the local Ollama model synchronously and
+    // can take several seconds. Fetching them in parallel — instead of
+    // awaiting one after the other — means the page never waits on the slow
+    // one to show the fast one.
+    fetch(`${API_BASE}/api/dashboard/stats`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => data && setStats(data))
+      .catch((err) => console.error("Failed to fetch dashboard stats:", err))
+      .finally(() => setStatsLoading(false));
+
+    fetchTelemetry();
   }, []);
 
-
-  if (loading) {
+  if (statsLoading) {
     return (
-      <div className="p-12 text-center text-slate-500 flex flex-col justify-center items-center space-y-3">
-        <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-        <span>Loading compliance & telemetry health stats from FastAPI...</span>
+      <div className="p-12 text-center text-mid-gray flex flex-col justify-center items-center gap-3 text-sm">
+        <Loader2 className="w-6 h-6 animate-spin" />
+        <span>Loading compliance data…</span>
       </div>
     );
   }
@@ -117,187 +127,162 @@ export default function DashboardPage() {
     device_summaries = [],
   } = stats || {};
 
-  const {
-    congestion_spikes = [],
-    multi_wan_comparison,
-    ai_advisory,
-  } = telemetry || {};
+  const { congestion_spikes = [], multi_wan_comparison, ai_advisory } = telemetry || {};
 
   return (
-    <div className="space-y-8">
-      {/* Title */}
+    <div className="space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white tracking-tight flex items-center space-x-3">
-          <LayoutDashboard className="w-8 h-8 text-cyan-400" />
-          <span>Compliance Dashboard</span>
-        </h1>
-        <p className="mt-1 text-sm text-slate-400">
-          Aggregated security compliance posture and Network Health Advisory across all audited network devices.
+        <h1 className="text-heading font-semibold text-ink">Dashboard</h1>
+        <p className="mt-1.5 text-sm text-mid-gray">
+          Aggregated compliance posture and network health across all audited devices.
         </p>
       </div>
 
-      {/* Summary Metrics Cards */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="text-xs uppercase font-medium text-slate-400 tracking-wider">Devices</div>
-          <div className="text-3xl font-bold text-blue-400 mt-2">{total_devices}</div>
+      {/* Metrics row */}
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5">
+          <div className="text-caption uppercase font-medium text-mid-gray">Devices</div>
+          <div className="text-heading font-semibold text-ink mt-1">{total_devices}</div>
         </div>
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="text-xs uppercase font-medium text-slate-400 tracking-wider">Total Findings</div>
-          <div className="text-3xl font-bold text-slate-200 mt-2">{total_findings}</div>
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5">
+          <div className="text-caption uppercase font-medium text-mid-gray">Findings</div>
+          <div className="text-heading font-semibold text-ink mt-1">{total_findings}</div>
         </div>
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="text-xs uppercase font-medium text-slate-400 tracking-wider">Passed Rules</div>
-          <div className="text-3xl font-bold text-emerald-400 mt-2">{total_pass}</div>
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5">
+          <div className="text-caption uppercase font-medium text-mid-gray">Passed</div>
+          <div className="text-heading font-semibold text-ink mt-1">{total_pass}</div>
         </div>
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 shadow-lg">
-          <div className="text-xs uppercase font-medium text-slate-400 tracking-wider">Failed Rules</div>
-          <div className="text-3xl font-bold text-rose-400 mt-2">{total_fail}</div>
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5">
+          <div className="text-caption uppercase font-medium text-mid-gray">Failed</div>
+          <div className="text-heading font-semibold text-ink mt-1">{total_fail}</div>
         </div>
-        <div className="bg-slate-900/80 border border-rose-900/40 rounded-xl p-5 shadow-lg bg-gradient-to-br from-rose-950/40 to-slate-900/60">
-          <div className="text-xs uppercase font-medium text-rose-400 tracking-wider flex items-center space-x-1">
-            <ShieldAlert className="w-3.5 h-3.5" />
-            <span>Critical Fails</span>
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5">
+          <div className="text-caption uppercase font-medium text-mid-gray flex items-center gap-1">
+            <ShieldAlert className="w-3 h-3" strokeWidth={2} />
+            Critical
           </div>
-          <div className="text-3xl font-bold text-rose-400 mt-2">
+          <div className="text-heading font-semibold text-ember mt-1">
             {severity_counts["CRITICAL"] || 0}
           </div>
         </div>
       </div>
 
-      {/* PHASE 9 — Network Health & Multi-WAN Link Advisory Widget */}
-      {telemetry && (
-        <div className="bg-slate-900/90 border border-cyan-900/40 rounded-2xl p-6 shadow-2xl space-y-6 relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
-            <div className="flex items-center space-x-3">
-              <div className="p-2.5 bg-cyan-500/10 border border-cyan-500/30 rounded-xl text-cyan-400">
-                <Activity className="w-5 h-5 animate-pulse" />
+      {/* Network health advisory (Phase 9) — loads independently of the stats
+          above since it waits on a local Ollama generation call (several
+          seconds); it never blocks the rest of the dashboard from showing. */}
+      {(telemetryLoading || telemetry) && (
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-hairline pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-nested bg-canvas border border-hairline flex items-center justify-center shrink-0">
+                <Activity className="w-4 h-4 text-ink" strokeWidth={2} />
               </div>
               <div>
-                <h2 className="text-lg font-semibold text-white flex items-center space-x-2">
-                  <span>Network Health & Multi-WAN Link Advisory</span>
-                </h2>
-                <p className="text-xs text-slate-400">
-                  Real-time telemetry metric analysis & local Ollama link optimization recommendations
+                <h2 className="text-body-lg font-medium text-ink">Network health &amp; multi-WAN advisory</h2>
+                <p className="text-xs text-mid-gray">
+                  Live probe of this host&apos;s real network interfaces — psutil counters + ICMP round-trips,
+                  reasoned over by an air-gapped LLM
                 </p>
               </div>
             </div>
-            <span className="px-3 py-1 bg-cyan-950/80 border border-cyan-500/40 text-cyan-300 text-xs font-mono rounded-full font-bold uppercase tracking-wider self-start sm:self-auto">
-              Air-Gapped LLM Module
-            </span>
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="px-2.5 py-1 bg-canvas border border-hairline text-ink-soft text-xs font-mono rounded-pill font-medium">
+                Air-gapped module
+              </span>
+              <button
+                onClick={fetchTelemetry}
+                disabled={telemetryLoading}
+                className="inline-flex items-center gap-1 px-2.5 py-1 rounded-pill border border-hairline text-xs font-medium text-ink hover:bg-canvas transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${telemetryLoading ? "animate-spin" : ""}`} strokeWidth={2} />
+                Rescan
+              </button>
+            </div>
           </div>
 
-          {/* Multi-WAN Path Comparison Cards */}
-          {multi_wan_comparison && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div
-                className={`p-5 rounded-xl border transition ${
-                  multi_wan_comparison.primary_wan.status === "Congested"
-                    ? "bg-rose-950/20 border-rose-800/60"
-                    : "bg-slate-950/60 border-slate-800"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Radio className="w-4 h-4 text-cyan-400" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-white">
-                      {multi_wan_comparison.primary_wan.name} ({multi_wan_comparison.primary_wan.interface})
-                    </span>
-                  </div>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
-                      multi_wan_comparison.primary_wan.status === "Congested"
-                        ? "bg-rose-950 text-rose-400 border border-rose-800"
-                        : "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                    }`}
-                  >
-                    {multi_wan_comparison.primary_wan.status}
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-medium">Util %</div>
-                    <div className="text-lg font-mono font-bold text-rose-400">
-                      {multi_wan_comparison.primary_wan.utilization_pct}%
-                    </div>
-                  </div>
-                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-medium">Latency</div>
-                    <div className="text-lg font-mono font-bold text-amber-400">
-                      {multi_wan_comparison.primary_wan.latency_ms}ms
-                    </div>
-                  </div>
-                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-medium">Loss %</div>
-                    <div className="text-lg font-mono font-bold text-rose-400">
-                      {multi_wan_comparison.primary_wan.loss_pct}%
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={`p-5 rounded-xl border transition ${
-                  multi_wan_comparison.secondary_wan.status === "Congested"
-                    ? "bg-rose-950/20 border-rose-800/60"
-                    : "bg-slate-950/60 border-slate-800"
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Radio className="w-4 h-4 text-emerald-400" />
-                    <span className="text-xs font-bold uppercase tracking-wider text-white">
-                      {multi_wan_comparison.secondary_wan.name} ({multi_wan_comparison.secondary_wan.interface})
-                    </span>
-                  </div>
-                  <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase ${
-                      multi_wan_comparison.secondary_wan.status === "Congested"
-                        ? "bg-rose-950 text-rose-400 border border-rose-800"
-                        : "bg-emerald-950 text-emerald-400 border border-emerald-800"
-                    }`}
-                  >
-                    {multi_wan_comparison.secondary_wan.status}
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-medium">Util %</div>
-                    <div className="text-lg font-mono font-bold text-emerald-400">
-                      {multi_wan_comparison.secondary_wan.utilization_pct}%
-                    </div>
-                  </div>
-                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-medium">Latency</div>
-                    <div className="text-lg font-mono font-bold text-slate-200">
-                      {multi_wan_comparison.secondary_wan.latency_ms}ms
-                    </div>
-                  </div>
-                  <div className="bg-slate-900/80 p-2 rounded-lg border border-slate-800">
-                    <div className="text-[10px] text-slate-400 uppercase font-medium">Loss %</div>
-                    <div className="text-lg font-mono font-bold text-emerald-400">
-                      {multi_wan_comparison.secondary_wan.loss_pct}%
-                    </div>
-                  </div>
-                </div>
-              </div>
+          {telemetryLoading && (
+            <div className="py-8 text-center text-mid-gray flex flex-col items-center gap-2 text-sm">
+              <Loader2 className="w-5 h-5 animate-spin" />
+              <span>Sampling real interface counters and pinging a public resolver…</span>
             </div>
           )}
 
-          {/* Active Congestion Spike Alerts */}
+          {!telemetryLoading && telemetry?.status === "no_connectivity" && (
+            <div className="py-8 text-center text-mid-gray text-sm">
+              No active network interface with a routable address was detected on this host.
+            </div>
+          )}
+
+          {!telemetryLoading && telemetry && (
+            <p className="text-xs text-mid-gray -mt-1">
+              Probed <span className="text-ink font-medium">{telemetry.metrics[0]?.device_name}</span> just now —{" "}
+              {telemetry.total_interfaces_monitored} active interface
+              {telemetry.total_interfaces_monitored === 1 ? "" : "s"} detected.
+            </p>
+          )}
+
+          {multi_wan_comparison && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {[multi_wan_comparison.primary_wan, multi_wan_comparison.secondary_wan].map((wan, i) =>
+                wan ? (
+                <div key={i} className="p-4 rounded-nested border border-hairline bg-canvas">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Radio className="w-3.5 h-3.5 text-ink-soft" strokeWidth={2} />
+                      <span className="text-xs font-semibold uppercase tracking-wide text-ink">
+                        {wan.name} ({wan.interface})
+                      </span>
+                    </div>
+                    <span
+                      className={`px-2 py-0.5 rounded-pill text-xs font-medium ${
+                        wan.status === "Congested"
+                          ? "bg-ember/10 text-ember"
+                          : "border border-hairline text-mid-gray"
+                      }`}
+                    >
+                      {wan.status}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 mt-3.5 text-center">
+                    <div className="bg-paper p-2 rounded-[6px] border border-hairline">
+                      <div className="text-caption text-mid-gray uppercase font-medium">Util</div>
+                      <div className="text-sm font-mono font-semibold text-ink">{wan.utilization_pct}%</div>
+                    </div>
+                    <div className="bg-paper p-2 rounded-[6px] border border-hairline">
+                      <div className="text-caption text-mid-gray uppercase font-medium">Latency</div>
+                      <div className="text-sm font-mono font-semibold text-ink">{wan.latency_ms}ms</div>
+                    </div>
+                    <div className="bg-paper p-2 rounded-[6px] border border-hairline">
+                      <div className="text-caption text-mid-gray uppercase font-medium">Loss</div>
+                      <div className="text-sm font-mono font-semibold text-ink">{wan.loss_pct}%</div>
+                    </div>
+                  </div>
+                </div>
+                ) : (
+                  <div
+                    key={i}
+                    className="p-4 rounded-nested border border-dashed border-hairline bg-canvas flex items-center justify-center text-xs text-mid-gray"
+                  >
+                    No secondary link detected on this host
+                  </div>
+                )
+              )}
+            </div>
+          )}
+
           {congestion_spikes.length > 0 && (
             <div className="space-y-2">
-              <div className="text-xs uppercase font-semibold text-rose-400 tracking-wider flex items-center space-x-1.5">
-                <AlertTriangle className="w-4 h-4" />
-                <span>Active Link Congestion Alerts</span>
+              <div className="text-caption uppercase font-medium text-mid-gray flex items-center gap-1.5">
+                <AlertTriangle className="w-3.5 h-3.5" strokeWidth={2} />
+                Active congestion alerts
               </div>
               {congestion_spikes.map((spike, idx) => (
                 <div
                   key={idx}
-                  className="p-3 bg-rose-950/40 border border-rose-800/60 text-rose-200 rounded-xl text-xs font-medium flex items-center justify-between"
+                  className="p-3 bg-ember/5 border border-ember/20 text-ink rounded-nested text-xs flex items-center justify-between gap-3"
                 >
                   <span>{spike.message}</span>
-                  <span className="px-2 py-0.5 bg-rose-900 text-white rounded font-bold uppercase text-[10px]">
+                  <span className={`px-2 py-0.5 rounded-pill font-medium shrink-0 ${SEVERITY_BADGE[spike.severity] || "bg-canvas text-mid-gray border border-hairline"}`}>
                     {spike.severity}
                   </span>
                 </div>
@@ -305,50 +290,62 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* AI Advisory Panel */}
           {ai_advisory && (
-            <div className="p-4 bg-slate-950/80 border border-cyan-800/40 rounded-xl space-y-2">
-              <div className="text-xs uppercase font-bold text-cyan-400 tracking-wider flex items-center space-x-1.5">
-                <Cpu className="w-4 h-4 text-cyan-400" />
-                <span>Ollama AI Advisory Recommendation</span>
+            <div className="p-4 bg-canvas border border-hairline rounded-nested space-y-2">
+              <div className="text-caption uppercase font-medium text-mid-gray flex items-center gap-1.5">
+                <Cpu className="w-3.5 h-3.5" strokeWidth={2} />
+                Advisory
               </div>
-              <p className="text-xs text-slate-300 leading-relaxed font-mono">
-                {ai_advisory}
-              </p>
+              <p className="text-xs text-ink-soft leading-relaxed font-mono">{ai_advisory}</p>
             </div>
           )}
         </div>
       )}
 
-      {/* Severity Breakdown Visualizer */}
+      {/* Severity breakdown */}
       {total_findings > 0 && (
-        <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
-          <h2 className="text-lg font-semibold text-white">Failed Findings by Severity</h2>
-          <div className="space-y-3">
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5 space-y-4">
+          <div>
+            <h2 className="text-body-lg font-medium text-ink">Failed findings by severity</h2>
+            <p className="text-xs text-mid-gray mt-0.5">
+              <span className="text-ink font-medium">{total_pass}</span> of{" "}
+              <span className="text-ink font-medium">{total_findings}</span> evaluated rules passed —{" "}
+              <span className="text-ink font-medium">
+                {total_findings > 0 ? Math.round((total_pass / total_findings) * 100) : 0}%
+              </span>{" "}
+              compliant across all audited devices.
+            </p>
+          </div>
+          <div className="space-y-2.5">
             {["CRITICAL", "HIGH", "MEDIUM", "LOW"].map((sev) => {
               const count = severity_counts[sev] || 0;
               const pct = total_fail > 0 ? Math.round((count / total_fail) * 100) : 0;
+              const isEmpty = count === 0;
               return (
-                <div key={sev} className="flex items-center gap-4 text-xs font-medium">
-                  <span className="w-20 font-bold uppercase tracking-wider text-right text-slate-400">
+                <div key={sev} className="flex items-center gap-4 text-xs">
+                  <span
+                    className={`w-20 font-medium uppercase tracking-wide text-right shrink-0 ${
+                      isEmpty ? "text-hairline" : "text-mid-gray"
+                    }`}
+                  >
                     {sev}
                   </span>
-                  <div className="flex-grow bg-slate-950 rounded-lg h-6 overflow-hidden border border-slate-800 flex items-center p-1">
+                  <div className="flex-grow bg-canvas rounded-pill h-3 overflow-hidden border border-hairline">
                     <div
-                      className={`h-full rounded-md flex items-center px-2 font-mono font-bold text-white transition-all duration-500 ${
-                        sev === "CRITICAL"
-                          ? "bg-rose-600"
-                          : sev === "HIGH"
-                          ? "bg-orange-600"
-                          : sev === "MEDIUM"
-                          ? "bg-amber-600"
-                          : "bg-lime-600"
+                      className={`h-full rounded-pill transition-all duration-500 ${
+                        isEmpty ? "" : SEVERITY_BAR[sev].split(" ")[0]
                       }`}
-                      style={{ width: `${Math.max(pct, 4)}%` }}
-                    >
-                      {count}
-                    </div>
+                      style={{ width: `${pct}%` }}
+                    />
                   </div>
+                  <span
+                    className={`w-16 shrink-0 font-mono text-right ${
+                      isEmpty ? "text-hairline" : "text-ink font-medium"
+                    }`}
+                  >
+                    {count}
+                    {!isEmpty && <span className="text-mid-gray font-normal"> · {pct}%</span>}
+                  </span>
                 </div>
               );
             })}
@@ -356,73 +353,63 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* Audited Devices Table */}
-      <div className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-0">
-        <div className="px-6 py-4 border-b border-slate-800">
-          <h2 className="text-lg font-semibold text-white">Devices — Worst Compliance Offenders First</h2>
+      {/* Devices table */}
+      <div className="bg-paper border border-hairline rounded-card shadow-subtle overflow-hidden">
+        <div className="px-5 py-4 border-b border-hairline">
+          <h2 className="text-body-lg font-medium text-ink">Devices — worst offenders first</h2>
         </div>
         <div className="overflow-x-auto">
           {device_summaries.length > 0 ? (
             <table className="w-full text-left border-collapse text-sm">
               <thead>
-                <tr className="bg-slate-950/60 text-slate-400 font-semibold border-b border-slate-800 uppercase text-xs tracking-wider">
-                  <th className="px-6 py-3.5">Device</th>
-                  <th className="px-6 py-3.5">Vendor</th>
-                  <th className="px-6 py-3.5">Framework</th>
-                  <th className="px-6 py-3.5">Passed</th>
-                  <th className="px-6 py-3.5">Failed</th>
-                  <th className="px-6 py-3.5">Worst Severity</th>
-                  <th className="px-6 py-3.5 text-right">Actions</th>
+                <tr className="text-mid-gray font-medium border-b border-hairline uppercase text-caption">
+                  <th className="px-5 py-3">Device</th>
+                  <th className="px-5 py-3">Vendor</th>
+                  <th className="px-5 py-3">Framework</th>
+                  <th className="px-5 py-3">Passed</th>
+                  <th className="px-5 py-3">Failed</th>
+                  <th className="px-5 py-3">Worst severity</th>
+                  <th className="px-5 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+              <tbody className="divide-y divide-hairline text-ink">
                 {device_summaries.map((ds) => (
-                  <tr key={`${ds.device_id}-${ds.framework}`} className="hover:bg-slate-800/40 transition">
-                    <td className="px-6 py-4 font-medium text-white">{ds.filename}</td>
-                    <td className="px-6 py-4">
-                      <span className="px-2.5 py-0.5 rounded text-xs font-semibold uppercase bg-slate-800 text-slate-200 border border-slate-700">
+                  <tr key={`${ds.device_id}-${ds.framework}`} className="hover:bg-canvas/60 transition-colors">
+                    <td className="px-5 py-3.5 font-medium">{ds.filename}</td>
+                    <td className="px-5 py-3.5">
+                      <span className="px-2 py-0.5 rounded-pill text-xs font-medium bg-canvas text-ink-soft border border-hairline">
                         {ds.vendor}
                       </span>
                     </td>
-                    <td className="px-6 py-4 font-mono text-xs text-cyan-400">{ds.framework}</td>
-                    <td className="px-6 py-4 text-emerald-400 font-medium">{ds.pass_count}</td>
-                    <td className="px-6 py-4 text-rose-400 font-medium">{ds.fail_count}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-5 py-3.5 font-mono text-xs text-mid-gray">{ds.framework}</td>
+                    <td className="px-5 py-3.5 text-ink-soft font-medium">{ds.pass_count}</td>
+                    <td className="px-5 py-3.5 text-ember font-medium">{ds.fail_count}</td>
+                    <td className="px-5 py-3.5">
                       {ds.worst_severity ? (
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                            ds.worst_severity === "CRITICAL"
-                              ? "bg-rose-950 text-rose-300 border border-rose-800"
-                              : ds.worst_severity === "HIGH"
-                              ? "bg-orange-950 text-orange-300 border border-orange-800"
-                              : ds.worst_severity === "MEDIUM"
-                              ? "bg-amber-950 text-amber-300 border border-amber-800"
-                              : "bg-lime-950 text-lime-300 border border-lime-800"
-                          }`}
-                        >
+                        <span className={`px-2 py-0.5 rounded-pill text-xs font-medium ${SEVERITY_BADGE[ds.worst_severity] || "bg-canvas text-mid-gray border border-hairline"}`}>
                           {ds.worst_severity}
                         </span>
                       ) : (
-                        <span className="text-xs font-medium text-emerald-400 flex items-center space-x-1">
-                          <CheckCircle2 className="w-3.5 h-3.5" />
-                          <span>All Clear</span>
+                        <span className="text-xs text-mid-gray flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2} />
+                          Clear
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4 text-right space-x-3">
+                    <td className="px-5 py-3.5 text-right space-x-4">
                       <Link
                         href={`/reports/${ds.device_id}?framework=${ds.framework}`}
-                        className="text-cyan-400 hover:text-cyan-300 font-medium text-xs hover:underline"
+                        className="text-ink hover:text-mid-gray font-medium text-xs"
                       >
-                        View Report
+                        View report
                       </Link>
                       <a
                         href={`${API_BASE}/devices/${ds.device_id}/report.pdf?framework=${ds.framework}`}
                         target="_blank"
                         rel="noreferrer"
-                        className="inline-flex items-center text-slate-400 hover:text-slate-200 font-medium text-xs hover:underline"
+                        className="inline-flex items-center text-mid-gray hover:text-ink font-medium text-xs"
                       >
-                        <Download className="w-3.5 h-3.5 mr-1" />
+                        <Download className="w-3 h-3 mr-1" strokeWidth={2} />
                         PDF
                       </a>
                     </td>
@@ -431,7 +418,7 @@ export default function DashboardPage() {
               </tbody>
             </table>
           ) : (
-            <div className="px-6 py-12 text-center text-slate-500 text-sm">
+            <div className="px-6 py-14 text-center text-mid-gray text-sm">
               No evaluated devices yet. Upload a config and run an evaluation to see results here.
             </div>
           )}

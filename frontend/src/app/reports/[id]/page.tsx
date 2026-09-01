@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useParams, useSearchParams, useRouter } from "next/navigation";
-import Link from "next/link";
-import { FileCheck, Download, CheckCircle2, XCircle, Shield, Copy, Check, Loader2 } from "lucide-react";
+import { Download, CheckCircle2, XCircle, Copy, Check, Loader2, RefreshCw } from "lucide-react";
 
 interface Finding {
   id: number;
@@ -31,6 +30,13 @@ interface ReportData {
 
 const API_BASE = "http://localhost:8000";
 
+const SEVERITY_STYLE: Record<string, string> = {
+  CRITICAL: "bg-ember text-paper",
+  HIGH: "bg-ember/10 text-ember",
+  MEDIUM: "bg-canvas text-ink-soft border border-hairline",
+  LOW: "border border-hairline text-mid-gray",
+};
+
 export default function ReportPage() {
   const params = useParams();
   const searchParams = useSearchParams();
@@ -42,6 +48,7 @@ export default function ReportPage() {
   const [report, setReport] = useState<ReportData | null>(null);
   const [loading, setLoading] = useState(true);
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [reevaluating, setReevaluating] = useState(false);
 
   const fetchReport = async (fw: string) => {
     setLoading(true);
@@ -72,6 +79,26 @@ export default function ReportPage() {
     router.push(`/reports/${deviceId}?framework=${fw}`);
   };
 
+  const handleReevaluate = async () => {
+    setReevaluating(true);
+    try {
+      const res = await fetch(
+        `${API_BASE}/evaluate/${deviceId}?framework=${currentFramework}`,
+        { method: "POST" }
+      );
+      if (res.ok) {
+        await fetchReport(currentFramework);
+      } else {
+        alert("Failed to re-evaluate device.");
+      }
+    } catch (err) {
+      console.error("Failed to re-evaluate:", err);
+      alert("Error connecting to backend server at http://localhost:8000");
+    } finally {
+      setReevaluating(false);
+    }
+  };
+
   const handleCopyRemediation = (text: string, id: number) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -80,16 +107,16 @@ export default function ReportPage() {
 
   if (loading) {
     return (
-      <div className="p-12 text-center text-slate-500 flex flex-col justify-center items-center space-y-3">
-        <Loader2 className="w-8 h-8 animate-spin text-cyan-400" />
-        <span>Evaluating configuration and generating compliance report...</span>
+      <div className="p-12 text-center text-mid-gray flex flex-col justify-center items-center gap-3 text-sm">
+        <Loader2 className="w-6 h-6 animate-spin" />
+        <span>Evaluating configuration…</span>
       </div>
     );
   }
 
   if (!report) {
     return (
-      <div className="p-12 text-center text-slate-500">
+      <div className="p-12 text-center text-mid-gray text-sm">
         Report not found for device #{deviceId}.
       </div>
     );
@@ -98,63 +125,65 @@ export default function ReportPage() {
   const { device, framework, pass_count, fail_count, total_rules, grouped_findings } = report;
 
   return (
-    <div className="space-y-8">
-      {/* Header Banner */}
-      <div className="bg-gradient-to-r from-slate-900 to-slate-950 border border-slate-800 rounded-2xl p-6 sm:p-8 shadow-xl">
+    <div className="space-y-6">
+      {/* Header card */}
+      <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <div className="flex items-center space-x-3">
-              <h1 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-                Compliance Report
+            <div className="flex items-center gap-2.5">
+              <h1 className="text-heading-sm font-semibold text-ink">
+                Compliance report
               </h1>
-              <span className="px-3 py-1 bg-cyan-500/10 border border-cyan-500/30 text-cyan-400 font-mono text-xs rounded-full font-bold uppercase">
+              <span className="px-2 py-0.5 bg-canvas border border-hairline text-ink-soft font-mono text-xs rounded-pill font-medium">
                 {framework}
               </span>
             </div>
-            <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm text-slate-300">
+            <div className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-sm text-mid-gray">
               <span>
-                <strong className="text-slate-500">Device:</strong>{" "}
-                <span className="text-white font-medium">{device.filename}</span>
+                <span className="text-ink font-medium">{device.filename}</span>
               </span>
-              <span>
-                <strong className="text-slate-500">Vendor:</strong>{" "}
-                <span className="text-cyan-400 uppercase font-semibold">{device.vendor}</span>
-              </span>
+              <span className="uppercase text-xs tracking-wide">{device.vendor}</span>
               {device.uploaded_at && (
-                <span>
-                  <strong className="text-slate-500">Uploaded:</strong>{" "}
-                  {new Date(device.uploaded_at).toLocaleString()}
-                </span>
+                <span className="text-xs">{new Date(device.uploaded_at).toLocaleString()}</span>
               )}
             </div>
           </div>
 
-          <div className="flex items-center space-x-3">
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handleReevaluate}
+              disabled={reevaluating}
+              title="Re-run compliance evaluation against the device's current config"
+              className="inline-flex items-center px-4 py-2 bg-transparent border border-hairline text-ink hover:bg-canvas font-medium text-[13px] rounded-pill transition-colors cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 mr-2 ${reevaluating ? "animate-spin" : ""}`} strokeWidth={2} />
+              <span>Re-evaluate</span>
+            </button>
             <a
               href={`${API_BASE}/devices/${device.id}/report.pdf?framework=${framework}`}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center px-5 py-2.5 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-white font-medium text-xs rounded-xl shadow-lg shadow-cyan-500/20 transition active:scale-95 cursor-pointer"
+              className="inline-flex items-center px-4 py-2 bg-ink hover:bg-ink-soft text-paper font-medium text-[13px] rounded-pill transition-colors cursor-pointer"
             >
-              <Download className="w-4 h-4 mr-2" />
+              <Download className="w-3.5 h-3.5 mr-2" strokeWidth={2} />
               <span>Download PDF</span>
             </a>
           </div>
         </div>
 
-        {/* Framework Selector Tabs */}
-        <div className="mt-6 border-t border-slate-800 pt-4 flex items-center space-x-2">
-          <span className="text-xs font-semibold text-slate-400 uppercase tracking-wider mr-2">
-            Rule Pack Framework:
+        {/* Framework tabs */}
+        <div className="mt-5 border-t border-hairline pt-4 flex items-center gap-1.5">
+          <span className="text-xs font-medium text-mid-gray uppercase tracking-wide mr-1.5">
+            Framework
           </span>
           {["CIS", "NIST", "STIG", "ISO"].map((fw) => (
             <button
               key={fw}
               onClick={() => handleFrameworkChange(fw)}
-              className={`px-3.5 py-1.5 rounded-lg text-xs font-medium transition cursor-pointer ${
+              className={`px-3 py-1.5 rounded-pill text-xs font-medium transition-colors cursor-pointer ${
                 framework === fw
-                  ? "bg-cyan-600 text-white shadow-sm font-semibold"
-                  : "bg-slate-800 text-slate-400 hover:text-white hover:bg-slate-700"
+                  ? "bg-ink text-paper"
+                  : "bg-canvas text-mid-gray hover:text-ink border border-hairline"
               }`}
             >
               {fw}
@@ -163,111 +192,102 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* Summary Cards */}
+      {/* Summary stats */}
       <div className="grid grid-cols-3 gap-4">
-        <div className="bg-slate-900/80 border border-slate-800 rounded-xl p-5 text-center shadow-lg">
-          <div className="text-3xl font-bold text-slate-200">{total_rules}</div>
-          <div className="text-xs uppercase font-medium text-slate-400 tracking-wider mt-1">
-            Total Rules
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5 text-center">
+          <div className="text-heading font-semibold text-ink">{total_rules}</div>
+          <div className="text-xs uppercase font-medium text-mid-gray tracking-wide mt-1">
+            Total rules
           </div>
         </div>
-        <div className="bg-slate-900/80 border border-emerald-900/40 rounded-xl p-5 text-center shadow-lg bg-gradient-to-br from-emerald-950/30 to-slate-900/60">
-          <div className="text-3xl font-bold text-emerald-400">{pass_count}</div>
-          <div className="text-xs uppercase font-medium text-emerald-400 tracking-wider mt-1">
-            Passed Rules
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5 text-center">
+          <div className="text-heading font-semibold text-ink">{pass_count}</div>
+          <div className="text-xs uppercase font-medium text-mid-gray tracking-wide mt-1">
+            Passed
           </div>
         </div>
-        <div className="bg-slate-900/80 border border-rose-900/40 rounded-xl p-5 text-center shadow-lg bg-gradient-to-br from-rose-950/30 to-slate-900/60">
-          <div className="text-3xl font-bold text-rose-400">{fail_count}</div>
-          <div className="text-xs uppercase font-medium text-rose-400 tracking-wider mt-1">
-            Failed Rules
+        <div className="bg-paper border border-hairline rounded-card shadow-subtle p-5 text-center">
+          <div className="text-heading font-semibold text-ember">{fail_count}</div>
+          <div className="text-xs uppercase font-medium text-mid-gray tracking-wide mt-1">
+            Failed
           </div>
         </div>
       </div>
 
-      {/* Category Grouped Findings */}
+      {/* Findings by category */}
       {Object.entries(grouped_findings).map(([category, findings]) => (
         <div
           key={category}
-          className="bg-slate-900/80 border border-slate-800 rounded-2xl overflow-hidden shadow-xl space-y-0"
+          className="bg-paper border border-hairline rounded-card shadow-subtle overflow-hidden"
         >
-          <div className="px-6 py-4 border-b border-slate-800 bg-slate-950/40">
-            <h2 className="text-lg font-semibold text-white capitalize">
-              {category.replace("_", " ")}
+          <div className="px-5 py-4 border-b border-hairline">
+            <h2 className="text-body-lg font-medium text-ink capitalize">
+              {category.replace(/_/g, " ")}
             </h2>
           </div>
 
           <div className="overflow-x-auto">
             <table className="w-full text-left border-collapse text-sm">
               <thead>
-                <tr className="bg-slate-950/80 text-slate-400 font-semibold border-b border-slate-800 uppercase text-xs tracking-wider">
-                  <th className="px-6 py-3.5 w-32">Rule ID</th>
-                  <th className="px-6 py-3.5">Title</th>
-                  <th className="px-6 py-3.5 w-24">Status</th>
-                  <th className="px-6 py-3.5 w-28">Severity</th>
-                  <th className="px-6 py-3.5">Remediation CLI</th>
+                <tr className="text-mid-gray font-medium border-b border-hairline uppercase text-caption">
+                  <th className="px-5 py-3 w-32">Rule ID</th>
+                  <th className="px-5 py-3">Title</th>
+                  <th className="px-5 py-3 w-24">Status</th>
+                  <th className="px-5 py-3 w-28">Severity</th>
+                  <th className="px-5 py-3">Remediation</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 text-slate-300">
+              <tbody className="divide-y divide-hairline text-ink">
                 {findings.map((f) => (
-                  <tr key={f.id} className="hover:bg-slate-800/40 transition">
-                    <td className="px-6 py-4 font-mono font-bold text-cyan-400 text-xs">
+                  <tr key={f.id} className="hover:bg-canvas/60 transition-colors">
+                    <td className="px-5 py-3.5 font-mono text-xs text-mid-gray">
                       {f.rule_id}
                     </td>
-                    <td className="px-6 py-4 font-medium text-slate-200">{f.title}</td>
-                    <td className="px-6 py-4">
+                    <td className="px-5 py-3.5 font-medium">{f.title}</td>
+                    <td className="px-5 py-3.5">
                       {f.status === "pass" ? (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-emerald-950 text-emerald-400 border border-emerald-800">
-                          PASS
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-xs font-medium border border-hairline text-mid-gray">
+                          <CheckCircle2 className="w-3 h-3" strokeWidth={2} />
+                          Pass
                         </span>
                       ) : (
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase bg-rose-950 text-rose-400 border border-rose-800">
-                          FAIL
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-pill text-xs font-medium bg-ember/10 text-ember">
+                          <XCircle className="w-3 h-3" strokeWidth={2} />
+                          Fail
                         </span>
                       )}
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-5 py-3.5">
                       <span
-                        className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-bold uppercase tracking-wider ${
-                          f.severity === "CRITICAL"
-                            ? "bg-rose-900 text-white"
-                            : f.severity === "HIGH"
-                            ? "bg-orange-600 text-white"
-                            : f.severity === "MEDIUM"
-                            ? "bg-amber-600 text-white"
-                            : "bg-lime-600 text-white"
+                        className={`inline-flex items-center px-2 py-0.5 rounded-pill text-xs font-medium ${
+                          SEVERITY_STYLE[f.severity] || "bg-canvas text-mid-gray border border-hairline"
                         }`}
                       >
                         {f.severity}
                       </span>
                     </td>
-                    <td className="px-6 py-4">
+                    <td className="px-5 py-3.5">
                       {f.status === "fail" && f.remediation_text ? (
                         <div className="relative group">
-                          <code className="font-mono text-xs bg-slate-950 text-cyan-300 p-2.5 rounded-lg border border-slate-800 block whitespace-pre-wrap word-break-all pr-10">
+                          <code className="font-mono text-xs bg-canvas text-ink-soft p-2.5 rounded-[6px] border border-hairline block whitespace-pre-wrap break-all pr-10">
                             {f.remediation_text}
                           </code>
                           <button
-                            onClick={() =>
-                              handleCopyRemediation(f.remediation_text!, f.id)
-                            }
-                            className="absolute right-2 top-2 p-1 text-slate-400 hover:text-white bg-slate-800/80 hover:bg-slate-700 rounded transition cursor-pointer"
-                            title="Copy Remediation CLI"
+                            onClick={() => handleCopyRemediation(f.remediation_text!, f.id)}
+                            className="absolute right-2 top-2 p-1 text-mid-gray hover:text-ink bg-paper border border-hairline rounded-[6px] transition-colors cursor-pointer"
+                            title="Copy remediation command"
                           >
                             {copiedId === f.id ? (
-                              <Check className="w-3.5 h-3.5 text-emerald-400" />
+                              <Check className="w-3.5 h-3.5" strokeWidth={2} />
                             ) : (
-                              <Copy className="w-3.5 h-3.5" />
+                              <Copy className="w-3.5 h-3.5" strokeWidth={2} />
                             )}
                           </button>
                         </div>
                       ) : f.status === "pass" ? (
-                        <span className="text-xs font-semibold text-emerald-400 flex items-center space-x-1">
-                          <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-                          <span>Compliant</span>
-                        </span>
+                        <span className="text-xs text-mid-gray">Compliant</span>
                       ) : (
-                        <span className="text-slate-500">—</span>
+                        <span className="text-mid-gray">—</span>
                       )}
                     </td>
                   </tr>
